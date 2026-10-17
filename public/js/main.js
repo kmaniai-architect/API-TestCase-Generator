@@ -1,0 +1,1 @@
+syncMethod(); chips(); initMode();

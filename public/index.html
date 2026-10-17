@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>API Test Case Agent</title>
+<link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+<div class="app">
+<aside class="sidebar" id="sidebar" aria-label="Saved test suites">
+  <div class="sbtop">
+    <button class="newbtn" id="newBtn">＋ New test suite</button>
+    <input id="histSearch" placeholder="🔍 Search suites…" autocomplete="off">
+  </div>
+  <div id="histList"></div>
+  <div class="sbfoot"><span id="histCount">0</span> saved · stored in this browser <button class="link" id="histClear">Clear all</button></div>
+</aside>
+<div class="scrim" id="sbScrim"></div>
+<div class="content">
+<header>
+  <button class="menu" id="menuBtn" title="Toggle sidebar">☰</button>
+  <div class="orb a"></div><div class="orb b"></div>
+  <h1><span class="bot">🤖</span> API Test Case Agent <span class="mode" id="modeBadge">Manual · offline</span></h1>
+  <p>Give it an endpoint, a method and your request / response bodies — choose offline rules or an LLM (Gemini, Claude, OpenAI…) to design the test suite.</p>
+</header>
+<main>
+  <section class="card">
+    <div class="modebar">
+      <div class="modeseg" id="modeSeg">
+        <button data-mode="manual" class="on">⚙ Manual <small>offline rules</small></button>
+        <button data-mode="ai">🤖 AI <small>LLM</small></button>
+        <i></i>
+      </div>
+      <span class="hint" id="modeNote"></span>
+    </div>
+    <div class="row">
+      <div>
+        <label>Method</label>
+        <div class="methods" id="methods"></div>
+      </div>
+      <div class="grow">
+        <label for="endpoint">Endpoint</label>
+        <input id="endpoint" value="https://api.example.com/v1/users" placeholder="https://api.example.com/v1/users/{id}" autocomplete="off">
+        <div class="chips" id="epChips"></div>
+      </div>
+    </div>
+
+    <div class="row" style="margin-top:16px">
+      <div class="pane" id="reqPane">
+        <label for="reqBody"><span>Request Body (JSON)</span>
+          <span><span class="badge" id="reqBadge">empty</span><button class="link" data-fmt="reqBody">Format</button></span></label>
+        <textarea id="reqBody" spellcheck="false" placeholder='{ "name": "John", "email": "john@example.com" }'></textarea>
+        <div class="hint">Used to build field-level input validation tests.</div>
+      </div>
+      <div class="pane" id="resPane">
+        <label for="resBody"><span id="resLabel">Response Body (JSON)</span>
+          <span><span class="badge" id="resBadge">empty</span><button class="link" data-fmt="resBody">Format</button></span></label>
+        <textarea id="resBody" spellcheck="false" placeholder='{ "id": 1, "name": "John", "email": "john@example.com" }'></textarea>
+        <div class="hint" id="resHint"></div>
+      </div>
+    </div>
+
+    <div style="margin-top:16px" id="aiOptions" hidden>
+      <div class="row" style="margin-bottom:14px">
+        <div style="flex:1 1 220px">
+          <label for="provider"><span>LLM provider</span></label>
+          <select id="provider"></select>
+        </div>
+        <div style="flex:1 1 220px">
+          <label for="model"><span>Model <small style="font-weight:400;color:var(--mute)">(optional override)</small></span></label>
+          <input id="model" placeholder="default" autocomplete="off">
+        </div>
+        <div style="flex:2 1 300px" id="keyBox" hidden>
+          <label for="apiKey"><span>API key <small style="font-weight:400;color:var(--mute)">(this session only, never saved)</small></span></label>
+          <input id="apiKey" type="password" placeholder="paste key — or set it in .env" autocomplete="off">
+        </div>
+      </div>
+      <label for="notes"><span>Business rules / extra instructions <small style="font-weight:400;color:var(--mute)">(optional)</small></span></label>
+      <textarea id="notes" style="min-height:70px;font-family:inherit" placeholder="e.g. age must be 18+; status can be active|closed; email must be unique; only admins can delete users"></textarea>
+      <label class="chk"><input type="checkbox" id="baseline" checked> Also include rule-based baseline cases (offline generator)</label>
+    </div>
+    <div style="margin-top:16px;display:flex;gap:10px;flex-wrap:wrap">
+      <button class="btn primary" id="gen">⚡ Generate Test Cases</button>
+      <button class="btn ghost" id="sample">✨ Load sample</button>
+      <button class="btn ghost" id="clear">Clear</button>
+    </div>
+    <div class="err" id="err"></div>
+  </section>
+
+  <section class="card" id="agent">
+    <div class="phead">
+      <div><b id="pTitle">Generating test cases…</b><div class="hint" id="pStep"></div></div>
+      <div class="pstat"><span id="pPct">0%</span><small id="pTime">0.0s</small></div>
+    </div>
+    <div class="track"><i id="prog"></i></div>
+    <div id="steps"></div>
+  </section>
+
+  <section id="results" hidden>
+    <div class="dash" id="dash"></div>
+    <div class="card">
+      <div class="cats" id="cats"></div>
+      <div class="bar">
+        <input id="q" placeholder="🔍 Search test cases…">
+        <select id="fType"><option value="">Positive + Negative</option><option>Positive</option><option>Negative</option></select>
+        <select id="fPri"><option value="">All priorities</option><option>High</option><option>Medium</option><option>Low</option></select>
+        <select id="fSrc"><option value="">All sources</option><option value="AI">AI generated</option><option value="Request">Request based</option><option value="Response">Response based</option><option value="General">General</option></select>
+        <button class="btn ghost" id="toggleAll">Expand all</button>
+        <button class="btn ghost" id="csv">⬇ CSV</button>
+        <button class="btn ghost" id="json">⬇ JSON</button>
+      </div>
+      <div class="tablewrap">
+        <table>
+          <thead><tr><th></th><th>ID</th><th>Category</th><th>Test Case</th><th>Type</th><th>Source</th><th>Method / Endpoint</th><th>Expected Status</th><th>Priority</th><th>Result</th></tr></thead>
+          <tbody id="tbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+</main>
+</div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script src="js/config.js"></script>
+<script src="js/utils.js"></script>
+<script src="js/generator.js"></script>
+<script src="js/input.js"></script>
+<script src="js/mode.js"></script>
+<script src="js/agent.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/export.js"></script>
+<script src="js/history.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>
