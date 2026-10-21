@@ -76,8 +76,15 @@
           <label for="pmKeyVal" style="margin-top:8px"><span>Key</span></label><input id="pmKeyVal" data-label="Key" type="password" autocomplete="off"></div>
         <div class="pmf" data-for="basic" hidden><label for="pmUser"><span>Username</span></label><input id="pmUser" data-label="Username" autocomplete="off">
           <label for="pmPass" style="margin-top:8px"><span>Password</span></label><input id="pmPass" data-label="Password" type="password" autocomplete="new-password"></div>
+        <div id="pmAuthVarRow" hidden style="margin-top:10px">
+          <label class="chk"><input type="checkbox" id="pmAuthVar"> Use a Postman variable instead of the real value</label>
+          <div id="pmAuthVarBox" hidden><input id="pmAuthVarName" value="authToken" data-label="Variable name" autocomplete="off">
+            <div class="hint">Requests carry <code>{{authToken}}</code>. The value above is optional and is written only to the environment file (never the collection) — update it there when it changes.</div></div>
+        </div>
           <label style="margin-top:16px"><span>Request headers</span><button class="link" id="pmAdd" type="button">＋ Add header</button></label>
           <div id="pmRows"></div>
+          <div class="hint">Values can use Postman variables, e.g. <code>Bearer {{token}}</code>.</div>
+          <div id="pmVarsBox" hidden><label style="margin-top:12px"><span>Variables used <small style="font-weight:400;color:var(--mute)">(values go to the environment file)</small></span></label><div id="pmVarsList"></div></div>
         </div>
         <div>
         <label><span>Live header preview</span><button class="link" id="pmRevealBtn" type="button">Show secrets</button></label>
@@ -106,7 +113,6 @@
       <div class="llmline" id="llmLine"></div>
       <label for="notes"><span>Business rules / extra instructions <small style="font-weight:400;color:var(--mute)">(optional)</small></span></label>
       <textarea id="notes" style="min-height:70px;font-family:inherit" placeholder="e.g. age must be 18+; status can be active|closed; email must be unique; only admins can delete users"></textarea>
-      <label class="chk"><input type="checkbox" id="baseline" checked> Also include rule-based baseline cases (offline generator)</label>
     </div>
     <div style="margin-top:16px;display:flex;gap:10px;flex-wrap:wrap">
       <button class="btn primary" id="gen">⚡ Generate Test Cases</button>
@@ -134,6 +140,7 @@
         <select id="fType"><option value="">Positive + Negative</option><option>Positive</option><option>Negative</option></select>
         <select id="fPri"><option value="">All priorities</option><option>High</option><option>Medium</option><option>Low</option></select>
         <select id="fSrc"><option value="">All sources</option><option value="AI">AI generated</option><option value="Request">Request based</option><option value="Response">Response based</option><option value="General">General</option></select>
+        <button class="btn primary" id="saveBtn" title="Save this suite to the history">💾 Save</button>
         <button class="btn ghost" id="toggleAll">Expand all</button>
         <button class="btn ghost" id="csv" title="Export the checked test cases as CSV">⬇ CSV (0 selected)</button>
         <button class="btn ghost" id="postman" title="Export the checked test cases as a Postman collection">⬇ Postman (0 selected)</button>
@@ -150,6 +157,16 @@
 </main>
 </div>
 </div>
+<div class="modal" id="saveDlg" hidden>
+  <div class="mbox" role="dialog" aria-modal="true" aria-label="Save test suite" style="width:min(460px,100%)">
+    <h3>💾 Save test suite?</h3>
+    <div class="hint" id="svInfo" style="margin:0 0 14px"></div>
+    <label for="svTitle"><span>Name in history</span></label>
+    <input id="svTitle" maxlength="100" autocomplete="off">
+    <div class="hint">Saved suites appear in the History sidebar with their Pass/Fail marks.</div>
+    <div class="mfoot"><button class="btn ghost" id="svCancel" type="button">Not now</button><button class="btn primary" id="svGo" type="button">Save to history</button></div>
+  </div>
+</div>
 <div class="modal" id="pmDlg" hidden>
   <div class="mbox" role="dialog" aria-modal="true" aria-label="Postman export">
     <h3>Export to Postman <small><span id="pmCount">0</span> test cases</small></h3>
@@ -161,18 +178,20 @@
         <div id="pmEnvBox">
           <div class="envrow"><div><label for="pmVar"><span>Variable</span></label><input id="pmVar" value="baseUrl" data-label="Variable name" autocomplete="off"></div>
           <div><label for="pmBase"><span>Current value</span></label><input id="pmBase" placeholder="https://api.example.com" data-label="Base URL" autocomplete="off"></div></div>
-          <label class="chk"><input type="checkbox" id="pmEnvFile" checked> Also download a Postman environment file</label>
         </div>
       </div>
       <div>
-        <label><span>Headers <small style="font-weight:400;color:var(--mute)">(set at the top of the page)</small></span></label>
-        <div class="live" id="pmLiveDlg"></div>
-        <label style="margin-top:14px"><span>Request URL preview</span></label>
+        <label><span>Request URL preview</span></label>
         <div class="live" id="pmUrlLive" style="min-height:0"></div>
         <div class="pmstat" id="pmStatusDlg"></div>
-        <div class="hint">Credentials are written into the downloaded file — don't share it.</div>
+        <div class="hint" id="pmCredHint">Credentials are written into the downloaded file — don't share it.</div>
       </div>
     </div>
+    <div class="dlbox"><b>Files to download</b>
+      <label class="chk"><input type="checkbox" id="pmDlCol" checked> Collection <code id="pmColFile">.postman_collection.json</code></label>
+      <label class="chk"><input type="checkbox" id="pmDlEnv" checked> Environment <code id="pmEnvFileName">.postman_environment.json</code> <small id="pmDlEnvNote" style="color:var(--mute)"></small></label>
+    </div>
+    <div id="pmHdrSlot"></div>
     <div class="mfoot"><button class="btn ghost" id="pmCancel" type="button">Close</button><button class="btn primary" id="pmGo" type="button">Validate &amp; download</button></div>
   </div>
 </div>

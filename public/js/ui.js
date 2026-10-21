@@ -5,7 +5,9 @@ function countUp(el,to){
 }
 function buildDash(){
   const c=k=>cases.filter(x=>x.type===k).length, s=k=>cases.filter(x=>x.source===k).length;
-  const items=[[cases.length,'Total test cases'],[c('Positive'),'Positive'],[c('Negative'),'Negative'],[s('AI'),'Written by AI'],[s('Request')+s('Response'),'Rule-based (bodies)'],[cases.filter(x=>x.priority==='High').length,'High priority']];
+  const items=[[cases.length,'Total test cases'],[c('Positive'),'Positive'],[c('Negative'),'Negative'],[cases.filter(x=>x.priority==='High').length,'High priority']];
+  // a suite is either all-LLM or all-rules: show only the source card that applies
+  const nAI=s('AI'); if(nAI) items.splice(3,0,[nAI,'Written by AI (LLM)']); if(cases.length-nAI) items.splice(3,0,[cases.length-nAI,'Rule-based']);
   $('dash').innerHTML=items.map((it,i)=>`<div class="stat" style="animation-delay:${i*70}ms"><b data-n="${it[0]}">0</b><span>${it[1]}</span></div>`).join('')+
    `<div class="stat ringbox" style="animation-delay:420ms"><svg class="ring" width="56" height="56" viewBox="0 0 56 56"><circle class="bg" cx="28" cy="28" r="24"/><circle class="fg" id="ringFg" cx="28" cy="28" r="24" stroke-dasharray="150.8" stroke-dashoffset="150.8"/></svg><div><b id="execPct">0%</b><span>Executed (<span id="execN">0</span>/${cases.length})</span></div></div>`;
   $('dash').querySelectorAll('b[data-n]').forEach(b=>countUp(b,+b.dataset.n));

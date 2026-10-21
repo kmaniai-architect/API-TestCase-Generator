@@ -240,3 +240,15 @@ input.bad{border-color:var(--bad)}
 .hsrc{font-weight:600}.hsrc.pdf{color:#d97706}.hsrc.url{color:#0e9f6e}
 .hsrc{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .hsrc.swagger{color:#0e9f6e}.hsrc.manual{color:var(--mute);font-weight:500}
+
+button.hgroup{display:flex;align-items:center;gap:6px;width:100%;background:none;border:0;cursor:pointer;text-align:left;color:inherit}
+button.hgroup:hover{color:var(--brand)}
+.hgroup .hcaret{display:inline-block;font-size:9px;transition:transform .2s}
+.hgroup.open .hcaret{transform:rotate(90deg)}
+.hgroup em{margin-left:auto;font-style:normal;font-size:11px;opacity:.7}
+
+.varrow{display:grid;grid-template-columns:minmax(90px,auto) 1fr;gap:8px;align-items:center;margin-top:6px}
+.varrow code{color:var(--brand)}
+
+.dlbox{margin-top:14px;padding:10px 12px;border:1px solid var(--line);border-radius:10px}
+.dlbox .chk{margin:6px 0 0}.dlbox code{font-size:12px;color:var(--mute)}

@@ -41,19 +41,35 @@ function autoTitle(e){
   return `${e.method} ${p}`;
 }
 
-/* Like continuing a chat: regenerating the same method+endpoint updates the open entry,
-   anything else starts a new one. */
-function saveHistory(entry){
-  let cur=hist.find(x=>x.id===currentHistoryId);
-  if(cur&&cur.method===entry.method&&cur.endpoint===entry.endpoint){
-    Object.assign(cur,entry,{ts:Date.now(),results:{}});
-    hist.splice(hist.indexOf(cur),1);
-  } else {
-    cur={...entry,id:'h'+Date.now().toString(36),ts:Date.now(),results:{},title:autoTitle(entry)};
-    currentHistoryId=cur.id;
-  }
-  hist.unshift(cur); putSuite(cur); renderHistory();
+/* A freshly generated suite is NOT in the history until the user saves it (popup after generating, or the 💾 Save button). */
+let pendingSuite=null;
+function openSaveDlg(){
+  if(!pendingSuite) return;
+  $('svTitle').value=autoTitle(pendingSuite); $('svTitle').classList.remove('bad');
+  const t=inputType({input:pendingSuite.input});
+  $('svInfo').innerHTML=`<b>${pendingSuite.cases.length}</b> test cases · ${pendingSuite.mode==='ai'?'🤖 AI':'⚙ Manual'} · input: ${INPUT_ICON[t]} ${INPUT_LABEL[t]}<br><code>${esc(pendingSuite.method)} ${esc(pendingSuite.endpoint)}</code>`;
+  $('saveDlg').hidden=false; $('svTitle').focus(); $('svTitle').select();
 }
+function commitSave(){
+  const title=$('svTitle').value.trim();
+  if(!title){ $('svTitle').classList.add('bad'); $('svTitle').focus(); return; }
+  if(!pendingSuite) { $('saveDlg').hidden=true; return; }
+  const cur={...pendingSuite,id:'h'+Date.now().toString(36),ts:Date.now(),results:{...results},title};
+  currentHistoryId=cur.id; pendingSuite=null;
+  hist.unshift(cur); putSuite(cur); renderHistory(); updateSaveBtn();
+  $('saveDlg').hidden=true; toast('💾 Saved to history');
+}
+function updateSaveBtn(){
+  const saved=!pendingSuite&&hist.some(x=>x.id===currentHistoryId), b=$('saveBtn');
+  b.textContent=saved?'✓ Saved':'💾 Save'; b.disabled=saved; b.classList.toggle('primary',!saved);
+}
+$('saveBtn').onclick=openSaveDlg;
+$('svGo').onclick=commitSave;
+$('svCancel').onclick=()=>{ $('saveDlg').hidden=true; };
+$('saveDlg').addEventListener('click',e=>{ if(e.target===$('saveDlg')) $('saveDlg').hidden=true; });
+$('svTitle').addEventListener('keydown',e=>{ if(e.key==='Enter') commitSave(); });
+$('svTitle').addEventListener('input',()=>$('svTitle').classList.remove('bad'));
+document.addEventListener('keydown',e=>{ if(e.key==='Escape') $('saveDlg').hidden=true; });
 function persistResults(){            // called whenever a Pass/Fail/Blocked mark changes
   const e=hist.find(x=>x.id===currentHistoryId); if(!e) return;
   e.results={...results}; putSuite(e,400); renderHistory();
@@ -68,13 +84,19 @@ function groupOf(ts){
   return days<=0?'Today':days===1?'Yesterday':days<=7?'Previous 7 days':days<=30?'Previous 30 days':'Older';
 }
 let renaming=null;
+/* date groups fold/unfold; Today + Yesterday start open, the rest closed. The user's choices are remembered. */
+let groupOpen={}; try{ groupOpen=JSON.parse(localStorage.getItem('histGroups'))||{}; }catch{}
+const isGroupOpen=(g,searching)=>searching||(g in groupOpen?groupOpen[g]:(g==='Today'||g==='Yesterday'));
 function renderHistory(){
   const all=loadHistory(), q=$('histSearch').value.trim().toLowerCase();
   const list=all.filter(e=>!q||(titleOf(e)+e.endpoint+e.method+srcLabel(e)).toLowerCase().includes(q));
   $('histCount').textContent=all.length;
-  let html='', last='';
+  let html='', last='', open=true;
+  const counts={}; list.forEach(e=>{ const g=groupOf(e.ts); counts[g]=(counts[g]||0)+1; });
   for(const e of list){
-    const g=groupOf(e.ts); if(g!==last){ html+=`<div class="hgroup">${g}</div>`; last=g; }
+    const g=groupOf(e.ts);
+    if(g!==last){ open=isGroupOpen(g,!!q); html+=`<button type="button" class="hgroup ${open?'open':''}" data-group="${g}" aria-expanded="${open}"><span class="hcaret">▶</span>${g}<em>${counts[g]}</em></button>`; last=g; }
+    if(!open) continue;
     const r=Object.values(e.results||{}), p=r.filter(x=>x==='pass').length, f=r.filter(x=>x==='fail').length;
     const title=renaming===e.id
       ?`<input class="hren" data-ren="${e.id}" value="${esc(titleOf(e))}">`
@@ -95,14 +117,14 @@ function openHistoryItem(id){
   $('resBody').value=e.res!==undefined?JSON.stringify(e.res,null,2):'';
   $('notes').value=e.notes||'';
   ['reqBody','resBody'].forEach(i=>$(i).dispatchEvent(new Event('input'))); chips();
-  cases=e.cases; results={...e.results}; openIds.clear(); selectedIds.clear(); allOpen=false; catFilter=''; currentHistoryId=e.id;
+  cases=e.cases; results={...e.results}; openIds.clear(); selectedIds.clear(); allOpen=false; catFilter=''; currentHistoryId=e.id; pendingSuite=null;
   $('toggleAll').textContent='Expand all';
   buildDash(); buildCats(); render();
-  $('results').hidden=false; renderHistory(); closeMobileSidebar();
+  $('results').hidden=false; renderHistory(); updateSaveBtn(); closeMobileSidebar();
   window.scrollTo({top:0,behavior:'smooth'});
 }
 function newSuite(){
-  currentHistoryId=null; cases=[]; results={}; selectedIds.clear(); impReset();
+  currentHistoryId=null; pendingSuite=null; cases=[]; results={}; selectedIds.clear(); impReset();
   $('reqBody').value=$('resBody').value=$('notes').value=''; $('err').textContent='';
   ['reqBody','resBody'].forEach(i=>$(i).dispatchEvent(new Event('input')));
   $('results').hidden=true; renderHistory(); closeMobileSidebar();
@@ -119,7 +141,7 @@ $('newBtn').onclick=newSuite;
 $('histSearch').oninput=renderHistory;
 $('histClear').onclick=()=>{
   if(!loadHistory().length||!confirm('Delete all saved test suites?')) return;
-  hist=[]; api('',{method:'DELETE'}).catch(saveFailed); currentHistoryId=null; renderHistory();
+  hist=[]; api('',{method:'DELETE'}).catch(saveFailed); currentHistoryId=null; renderHistory(); updateSaveBtn();
 };
 function commitRename(input){
   const e=hist.find(x=>x.id===input.dataset.ren);
@@ -128,13 +150,15 @@ function commitRename(input){
 }
 $('histList').onclick=ev=>{
   if(ev.target.closest('.hren')) return;
+  const gh=ev.target.closest('.hgroup');
+  if(gh){ const g=gh.dataset.group; groupOpen[g]=!isGroupOpen(g,false); try{ localStorage.setItem('histGroups',JSON.stringify(groupOpen)); }catch{} renderHistory(); return; }
   const it=ev.target.closest('.hitem'); if(!it) return;
   const act=ev.target.closest('[data-act]');
   if(act&&act.dataset.act==='del'){
     if(!confirm('Delete this saved test suite?')) return;
     hist=hist.filter(x=>x.id!==it.dataset.id); deleteSuite(it.dataset.id);
     if(currentHistoryId===it.dataset.id){ currentHistoryId=null; $('results').hidden=true; }
-    renderHistory(); return;
+    renderHistory(); updateSaveBtn(); return;
   }
   if(act&&act.dataset.act==='ren'){ renaming=it.dataset.id; renderHistory(); return; }
   openHistoryItem(it.dataset.id);
@@ -146,3 +170,4 @@ $('histList').addEventListener('keydown',ev=>{
 });
 $('histList').addEventListener('focusout',ev=>{ if(ev.target.classList&&ev.target.classList.contains('hren')&&renaming) commitRename(ev.target); });
 renderHistory(); syncHistory();
+updateSaveBtn();

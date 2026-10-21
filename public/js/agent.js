@@ -70,7 +70,6 @@ $('gen').onclick=async()=>{
   if(mode==='ai'){
     try{ ai=await runAgent(callLLM({method,endpoint,request:req,response:res,headers:hs.list.map(h=>({name:h.k,value:h.secret?'<redacted>':h.v})),notes:$('notes').value.trim()})); }
     catch(e){ $('gen').disabled=false; return fail('AI generation failed: '+e.message); }
-    if($('baseline').checked) base=generate(method,endpoint,req,res);
   } else {
     await runAgent(Promise.resolve());
     base=generate(method,endpoint,req,res);
@@ -81,9 +80,12 @@ $('gen').onclick=async()=>{
   cases=base.concat(ai.filter(x=>!seen.has(x.title.toLowerCase()))).map((x,i)=>({...x,id:'TC'+String(i+1).padStart(3,'0')}));
   openIds.clear(); results={}; allOpen=false; catFilter='';
   const fromImport=impSrc&&impSrc.method===method&&impStillMatches(impSrc.endpoint,endpoint);   // still the imported values, not edited by hand
-  saveHistory({method,endpoint,mode,req,res,notes:$('notes').value.trim(),cases,input:fromImport?{type:impSrc.type,name:impSrc.name}:{type:'manual'}});
+  currentHistoryId=null;   // new suite: not in the history until the user saves it
+  pendingSuite={method,endpoint,mode,req,res,notes:$('notes').value.trim(),cases,input:fromImport?{type:impSrc.type,name:impSrc.name}:{type:'manual'}};
+  renderHistory(); updateSaveBtn();
   $('toggleAll').textContent='Expand all';
   buildDash(); buildCats(); render();
   $('results').hidden=false; $('results').scrollIntoView({behavior:'smooth'});
   toast(mode==='ai'?`✅ ${cases.length} test cases (${ai.length} from ${providerLabel()})`:`✅ ${cases.length} test cases generated`);
+  openSaveDlg();
 };

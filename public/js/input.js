@@ -40,4 +40,4 @@ $('sample').onclick=()=>{
   $('resBody').value = JSON.stringify(s.res,null,2);
   ['reqBody','resBody'].forEach(i=>$(i).dispatchEvent(new Event('input'))); chips();
 };
-$('clear').onclick=()=>{ $('reqBody').value=$('resBody').value=''; ['reqBody','resBody'].forEach(i=>$(i).dispatchEvent(new Event('input'))); $('results').hidden=true; };
+$('clear').onclick=()=>{ $('reqBody').value=$('resBody').value=''; ['reqBody','resBody'].forEach(i=>$(i).dispatchEvent(new Event('input'))); $('results').hidden=true; pendingSuite=null; updateSaveBtn(); };
