@@ -70,9 +70,10 @@ Given an HTTP method, endpoint, and sample request/response JSON bodies, produce
 - Aim for 30-60 high-value cases. Do not pad with near-duplicates.
 Reply with ONLY a JSON object of the form {"cases":[{"category":"","title":"","type":"Positive|Negative","request":"","status":"","expected":"","priority":"High|Medium|Low"}]} — no markdown, no commentary.`;
 
-const buildPrompt = ({ method, endpoint, request, response, notes }) => [
+const buildPrompt = ({ method, endpoint, headers, request, response, notes }) => [
   `Method: ${method}`,
   `Endpoint: ${endpoint}`,
+  Array.isArray(headers) && headers.length ? `Request headers (secret values redacted):\n${headers.slice(0, 30).map(h => `${String(h.name).slice(0, 100)}: ${String(h.value).slice(0, 200)}`).join('\n')}` : '',
   request !== undefined ? `Request body:\n${JSON.stringify(request, null, 2)}` : 'Request body: (none)',
   response !== undefined ? `Response body (success):\n${JSON.stringify(response, null, 2)}` : 'Response body: (not provided)',
   notes ? `Business rules / extra instructions from the user:\n${notes}` : '',
@@ -158,7 +159,7 @@ db.exec(`
   PRAGMA foreign_keys = ON;
   CREATE TABLE IF NOT EXISTS suites (
     id TEXT PRIMARY KEY, title TEXT, method TEXT NOT NULL, endpoint TEXT NOT NULL, mode TEXT,
-    notes TEXT, request_body TEXT, response_body TEXT, created_at INTEGER, updated_at INTEGER NOT NULL);
+    notes TEXT, request_body TEXT, response_body TEXT, created_at INTEGER, updated_at INTEGER NOT NULL, input_type TEXT, input_name TEXT);
   CREATE TABLE IF NOT EXISTS test_cases (
     suite_id TEXT NOT NULL REFERENCES suites(id) ON DELETE CASCADE, id TEXT NOT NULL, position INTEGER,
     category TEXT, title TEXT, type TEXT, source TEXT, method TEXT, endpoint TEXT, request TEXT,
@@ -166,16 +167,17 @@ db.exec(`
     PRIMARY KEY (suite_id, id));
 `);
 // databases created before the llm column existed
+for (const col of ['input_type', 'input_name']) if (!db.prepare('PRAGMA table_info(suites)').all().some(c => c.name === col)) db.exec(`ALTER TABLE suites ADD COLUMN ${col} TEXT`);
 if (!db.prepare('PRAGMA table_info(test_cases)').all().some(c => c.name === 'llm')) db.exec('ALTER TABLE test_cases ADD COLUMN llm TEXT');
 const json = v => v === undefined ? null : JSON.stringify(v);
 const unjson = t => t == null ? undefined : JSON.parse(t);
 const q = {
   suites: db.prepare('SELECT * FROM suites ORDER BY updated_at DESC'),
   cases: db.prepare('SELECT * FROM test_cases WHERE suite_id = ? ORDER BY position'),
-  upsert: db.prepare(`INSERT INTO suites (id, title, method, endpoint, mode, notes, request_body, response_body, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET title = excluded.title, method = excluded.method,
+  upsert: db.prepare(`INSERT INTO suites (id, title, method, endpoint, mode, notes, request_body, response_body, created_at, updated_at, input_type, input_name)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET title = excluded.title, method = excluded.method,
     endpoint = excluded.endpoint, mode = excluded.mode, notes = excluded.notes, request_body = excluded.request_body,
-    response_body = excluded.response_body, updated_at = excluded.updated_at`),
+    response_body = excluded.response_body, updated_at = excluded.updated_at, input_type = excluded.input_type, input_name = excluded.input_name`),
   dropCases: db.prepare('DELETE FROM test_cases WHERE suite_id = ?'),
   addCase: db.prepare(`INSERT INTO test_cases (suite_id, id, position, category, title, type, source, method, endpoint, request, status, expected, priority, steps, result, llm)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`),
@@ -193,13 +195,14 @@ function listSuites() {
         request: c.request, status: c.status, expected: c.expected, priority: c.priority, steps: unjson(c.steps), llm: c.llm || undefined };
     });
     return { id: s.id, title: s.title, method: s.method, endpoint: s.endpoint, mode: s.mode, notes: s.notes,
-      req: unjson(s.request_body), res: unjson(s.response_body), ts: s.updated_at, cases, results };
+      req: unjson(s.request_body), res: unjson(s.response_body), ts: s.updated_at, cases, results,
+      input: s.input_type ? { type: s.input_type, name: s.input_name || undefined } : undefined };
   });
 }
 function saveSuite(s) {
   const results = s.results || {};
   tx(() => {
-    q.upsert.run(s.id, str(s.title), s.method, s.endpoint, str(s.mode), str(s.notes), json(s.req), json(s.res), s.ts || Date.now(), s.ts || Date.now());
+    q.upsert.run(s.id, str(s.title), s.method, s.endpoint, str(s.mode), str(s.notes), json(s.req), json(s.res), s.ts || Date.now(), s.ts || Date.now(), str(s.input?.type), str(s.input?.name));
     q.dropCases.run(s.id);
     s.cases.forEach((c, i) => q.addCase.run(s.id, String(c.id ?? i + 1), i, str(c.category), str(c.title), str(c.type), str(c.source),
       str(c.method), str(c.endpoint), str(c.request), str(c.status), str(c.expected), str(c.priority), json(c.steps), results[c.id] || null, str(c.llm)));
@@ -207,6 +210,18 @@ function saveSuite(s) {
 }
 const deleteSuite = id => q.del.run(id);
 const clearSuites = () => db.exec('DELETE FROM suites');
+
+/* ---------- fetch a URL on behalf of the page (OpenAPI spec / sample response), GET only, size + time capped ---------- */
+async function fetchForImport(url) {
+  let u; try { u = new URL(String(url)); } catch { throw Object.assign(new Error('Enter a valid http(s) URL'), { status: 400 }); }
+  if (!/^https?:$/.test(u.protocol)) throw Object.assign(new Error('Only http(s) URLs are supported'), { status: 400 });
+  let r;
+  try { r = await fetch(u, { headers: { Accept: 'application/json, text/plain;q=0.9, */*;q=0.5' }, signal: AbortSignal.timeout(15000) }); }
+  catch (e) { throw Object.assign(new Error(`Could not reach ${u.host}: ${e.cause?.code || e.message}`), { status: 502 }); }
+  const MAX = 3e6, chunks = []; let size = 0;
+  for await (const c of r.body) { size += c.length; if (size > MAX) throw Object.assign(new Error('Response is larger than 3 MB'), { status: 413 }); chunks.push(c); }
+  return { url: r.url, status: r.status, contentType: r.headers.get('content-type') || '', text: Buffer.concat(chunks).toString('utf8') };
+}
 
 /* ---------- http server ---------- */
 const MIME = { '.html': 'text/html', '.css': 'text/css', '.js': 'text/javascript', '.json': 'application/json', '.svg': 'image/svg+xml', '.ico': 'image/x-icon' };
@@ -239,6 +254,12 @@ http.createServer(async (req, res) => {
       let body; try { body = JSON.parse(raw); } catch { return send(res, 400, { error: 'Invalid JSON body' }); }
       if (!body.method || !body.endpoint) return send(res, 400, { error: 'method and endpoint are required' });
       return send(res, 200, { cases: await generate(body, req.headers['x-api-key']) });
+    }
+    if (req.method === 'POST' && req.url === '/api/fetch-url') {
+      let raw = '';
+      for await (const chunk of req) { raw += chunk; if (raw.length > 1e5) return send(res, 413, { error: 'Payload too large' }); }
+      let body; try { body = JSON.parse(raw); } catch { return send(res, 400, { error: 'Invalid JSON body' }); }
+      return send(res, 200, await fetchForImport(body.url));
     }
     if (req.method === 'GET') {
       const rel = decodeURIComponent(new URL(req.url, 'http://x').pathname);

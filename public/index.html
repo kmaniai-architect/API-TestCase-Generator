@@ -34,6 +34,25 @@
       </div>
       <span class="hint" id="modeNote"></span>
     </div>
+    <div class="inmode">
+      <div class="inmode-h"><b>Input Mode</b><span class="hint" style="margin:0" id="inNote">Type the endpoint and bodies below.</span></div>
+      <div class="tabs" id="inTabs" role="tablist">
+        <button type="button" role="tab" class="tab on" data-imp="manual">✍ Manually</button>
+        <button type="button" role="tab" class="tab" data-imp="pdf">📄 PDF Based</button>
+        <button type="button" role="tab" class="tab" data-imp="url">🔗 Swagger / URL Based</button>
+      </div>
+    <div class="imppanel" id="impPanel" hidden>
+      <div data-imp-pane="url" hidden>
+        <div class="row" style="flex-wrap:nowrap"><input id="impUrl" placeholder="OpenAPI / Swagger JSON URL, or an endpoint that returns JSON" autocomplete="off"><button class="btn primary" id="impFetch" type="button">Fetch</button></div>
+      </div>
+      <div data-imp-pane="pdf" hidden><input type="file" id="impFile" accept="application/pdf,.pdf"><div class="hint">API documentation with lines like <code>POST /v1/users</code> and JSON examples. Text is read in your browser; the PDF is not uploaded.</div></div>
+      <div class="hint" id="impMsg"></div>
+      <div id="impBaseRow" hidden><label for="impBase"><span>Base URL <small style="font-weight:400;color:var(--mute)">(prepended to relative paths)</small></span></label><input id="impBase" placeholder="https://api.example.com" autocomplete="off"></div>
+      <input id="impFilter" placeholder="🔍 Filter operations…" hidden autocomplete="off">
+      <div class="hint" id="impCount"></div>
+      <div id="impList"></div>
+    </div>
+    </div>
     <div class="row">
       <div>
         <label>Method</label>
@@ -46,6 +65,28 @@
       </div>
     </div>
 
+    <div class="hdrcard" id="hdrCard">
+      <div class="hdrhead"><label class="sw"><input type="checkbox" id="hdrOn"><i></i><b>Request headers &amp; authentication</b></label><span class="pmstat" id="pmStatus"></span></div>
+      <div class="mgrid" id="hdrBody">
+        <div>
+        <label for="pmAuth"><span>Authentication</span></label>
+        <select id="pmAuth"><option value="none">No auth</option><option value="bearer">Bearer token</option><option value="apikey">API key</option><option value="basic">Basic (username / password)</option></select>
+        <div class="pmf" data-for="bearer" hidden><label for="pmToken"><span>Token</span></label><input id="pmToken" data-label="Token" type="password" autocomplete="off"></div>
+        <div class="pmf" data-for="apikey" hidden><label for="pmKeyName"><span>Header name</span></label><input id="pmKeyName" data-label="Header name" value="X-API-Key" autocomplete="off">
+          <label for="pmKeyVal" style="margin-top:8px"><span>Key</span></label><input id="pmKeyVal" data-label="Key" type="password" autocomplete="off"></div>
+        <div class="pmf" data-for="basic" hidden><label for="pmUser"><span>Username</span></label><input id="pmUser" data-label="Username" autocomplete="off">
+          <label for="pmPass" style="margin-top:8px"><span>Password</span></label><input id="pmPass" data-label="Password" type="password" autocomplete="new-password"></div>
+          <label style="margin-top:16px"><span>Request headers</span><button class="link" id="pmAdd" type="button">＋ Add header</button></label>
+          <div id="pmRows"></div>
+        </div>
+        <div>
+        <label><span>Live header preview</span><button class="link" id="pmRevealBtn" type="button">Show secrets</button></label>
+        <div class="live" id="pmLive"></div>
+        <div class="hint">Sent with every request in the collection.</div>
+          <div class="hint">Validated as you type. Used in the Postman export and given to the AI as context.</div>
+        </div>
+      </div>
+    </div>
     <div class="row" style="margin-top:16px">
       <div class="pane" id="reqPane">
         <label for="reqBody"><span>Request Body (JSON)</span>
@@ -62,20 +103,7 @@
     </div>
 
     <div style="margin-top:16px" id="aiOptions" hidden>
-      <div class="row" style="margin-bottom:14px">
-        <div style="flex:1 1 220px">
-          <label for="provider"><span>LLM provider</span></label>
-          <select id="provider"></select>
-        </div>
-        <div style="flex:1 1 220px">
-          <label for="model"><span>Model <small style="font-weight:400;color:var(--mute)">(optional override)</small></span></label>
-          <input id="model" placeholder="default" autocomplete="off">
-        </div>
-        <div style="flex:2 1 300px" id="keyBox" hidden>
-          <label for="apiKey"><span>API key <small style="font-weight:400;color:var(--mute)">(this session only, never saved)</small></span></label>
-          <input id="apiKey" type="password" placeholder="paste key — or set it in .env" autocomplete="off">
-        </div>
-      </div>
+      <div class="llmline" id="llmLine"></div>
       <label for="notes"><span>Business rules / extra instructions <small style="font-weight:400;color:var(--mute)">(optional)</small></span></label>
       <textarea id="notes" style="min-height:70px;font-family:inherit" placeholder="e.g. age must be 18+; status can be active|closed; email must be unique; only admins can delete users"></textarea>
       <label class="chk"><input type="checkbox" id="baseline" checked> Also include rule-based baseline cases (offline generator)</label>
@@ -107,12 +135,13 @@
         <select id="fPri"><option value="">All priorities</option><option>High</option><option>Medium</option><option>Low</option></select>
         <select id="fSrc"><option value="">All sources</option><option value="AI">AI generated</option><option value="Request">Request based</option><option value="Response">Response based</option><option value="General">General</option></select>
         <button class="btn ghost" id="toggleAll">Expand all</button>
-        <button class="btn ghost" id="csv">⬇ CSV</button>
+        <button class="btn ghost" id="csv" title="Export the checked test cases as CSV">⬇ CSV (0 selected)</button>
+        <button class="btn ghost" id="postman" title="Export the checked test cases as a Postman collection">⬇ Postman (0 selected)</button>
         <button class="btn ghost" id="json">⬇ JSON</button>
       </div>
       <div class="tablewrap">
         <table>
-          <thead><tr><th></th><th>ID</th><th>Category</th><th>Test Case</th><th>Type</th><th>Source</th><th>Method / Endpoint</th><th>Expected Status</th><th>Priority</th><th>Result</th></tr></thead>
+          <thead><tr><th class="selcol"><input type="checkbox" id="selAll" title="Select all shown"></th><th></th><th>ID</th><th>Category</th><th>Test Case</th><th>Type</th><th>Source</th><th>Method / Endpoint</th><th>Expected Status</th><th>Priority</th><th>Result</th></tr></thead>
           <tbody id="tbody"></tbody>
         </table>
       </div>
@@ -121,16 +150,44 @@
 </main>
 </div>
 </div>
+<div class="modal" id="pmDlg" hidden>
+  <div class="mbox" role="dialog" aria-modal="true" aria-label="Postman export">
+    <h3>Export to Postman <small><span id="pmCount">0</span> test cases</small></h3>
+    <div class="mgrid">
+      <div>
+        <label for="pmName"><span>Collection name</span></label>
+        <input id="pmName" value="API Test Cases" maxlength="100" data-label="Collection name" autocomplete="off" style="margin-bottom:14px">
+        <label class="chk" style="margin-top:16px"><input type="checkbox" id="pmUseEnv" checked> Use a base-URL variable (requests keep only the path)</label>
+        <div id="pmEnvBox">
+          <div class="envrow"><div><label for="pmVar"><span>Variable</span></label><input id="pmVar" value="baseUrl" data-label="Variable name" autocomplete="off"></div>
+          <div><label for="pmBase"><span>Current value</span></label><input id="pmBase" placeholder="https://api.example.com" data-label="Base URL" autocomplete="off"></div></div>
+          <label class="chk"><input type="checkbox" id="pmEnvFile" checked> Also download a Postman environment file</label>
+        </div>
+      </div>
+      <div>
+        <label><span>Headers <small style="font-weight:400;color:var(--mute)">(set at the top of the page)</small></span></label>
+        <div class="live" id="pmLiveDlg"></div>
+        <label style="margin-top:14px"><span>Request URL preview</span></label>
+        <div class="live" id="pmUrlLive" style="min-height:0"></div>
+        <div class="pmstat" id="pmStatusDlg"></div>
+        <div class="hint">Credentials are written into the downloaded file — don't share it.</div>
+      </div>
+    </div>
+    <div class="mfoot"><button class="btn ghost" id="pmCancel" type="button">Close</button><button class="btn primary" id="pmGo" type="button">Validate &amp; download</button></div>
+  </div>
+</div>
 <div class="toast" id="toast"></div>
 
 <script src="js/config.js"></script>
 <script src="js/utils.js"></script>
 <script src="js/generator.js"></script>
 <script src="js/input.js"></script>
+<script src="js/import.js"></script>
 <script src="js/mode.js"></script>
 <script src="js/agent.js"></script>
 <script src="js/ui.js"></script>
 <script src="js/export.js"></script>
+<script src="js/postman.js"></script>
 <script src="js/history.js"></script>
 <script src="js/main.js"></script>
 </body>

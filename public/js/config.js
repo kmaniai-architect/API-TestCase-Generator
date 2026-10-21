@@ -9,4 +9,4 @@ const SAMPLES = {
   DELETE:{req:null,res:{message:"User deleted"}}
 };
 const AI_CAT='__ai__';   // category-chip value for "AI generated"
-let method='POST', cases=[], openIds=new Set(), results={}, allOpen=false, catFilter='';
+let method='POST', cases=[], openIds=new Set(), selectedIds=new Set(), results={}, allOpen=false, catFilter='';

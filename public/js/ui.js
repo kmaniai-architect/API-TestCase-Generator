@@ -34,12 +34,13 @@ function render(){
     const open=openIds.has(x.id), r=results[x.id]||'';
     const steps=[`Send <b>${x.method}</b> request to <code>${esc(x.endpoint)}</code>`,'Apply the request / input shown on the left',`Assert status is <b>${esc(x.status)}</b>`,`Assert: ${esc(x.expected)}`];
     return `<tr class="tc ${open?'open':''} ${r}" data-id="${x.id}" style="animation-delay:${Math.min(i,25)*25}ms">
+      <td class="selcol"><input type="checkbox" class="sel" data-id="${x.id}" ${selectedIds.has(x.id)?'checked':''}></td>
       <td><span class="caret">▶</span></td><td>${x.id}</td><td>${esc(x.category)}</td><td>${esc(x.title)}</td>
       <td class="${x.type}">${x.type}</td><td><span class="src ${x.source==='AI'?'ai':''}"${x.llm?` title="${esc(x.llm)}"`:''}>${x.source}</span></td>
       <td><span class="m ${x.method}">${x.method}</span><br><code>${esc(x.endpoint)}</code></td>
       <td>${esc(x.status)}</td><td><span class="pri ${x.priority}">${x.priority}</span></td>
       <td>${r?({pass:'✅ Pass',fail:'❌ Fail',blocked:'⏸ Blocked'})[r]:'<span style="color:var(--mute)">—</span>'}</td></tr>
-      <tr class="detail ${open?'open':''}" data-for="${x.id}"><td colspan="10"><div class="dwrap"><div class="dinner"><div class="dgrid">
+      <tr class="detail ${open?'open':''}" data-for="${x.id}"><td colspan="11"><div class="dwrap"><div class="dinner"><div class="dgrid">
         <div><h4>Request / Input</h4><pre>${esc(pretty(x.request))}</pre></div>
         <div><h4>Test steps</h4><ol>${steps.map(z=>`<li>${z}</li>`).join('')}</ol></div>
         <div><h4>Expected result</h4><p style="margin:0"><b>${esc(x.status)}</b><br>${esc(x.expected)}</p>
@@ -48,10 +49,23 @@ function render(){
             <button class="fail ${r==='fail'?'on':''}" data-r="fail">✗ Fail</button>
             <button class="blocked ${r==='blocked'?'on':''}" data-r="blocked">⏸ Blocked</button></div></div>
       </div></div></div></td></tr>`;
-  }).join(''):'<tr><td colspan="10" class="empty">No matching test cases 🙈</td></tr>';
+  }).join(''):'<tr><td colspan="11" class="empty">No matching test cases 🙈</td></tr>';
+  visibleIds=rows.map(x=>x.id);
+  updateSelUI();
   updateRing();
 }
+let visibleIds=[];
+function updateSelUI(){
+  selectedIds.forEach(id=>{ if(!cases.some(x=>x.id===id)) selectedIds.delete(id); });
+  $('csv').textContent=`⬇ CSV (${selectedIds.size} selected)`;
+  $('postman').textContent=`⬇ Postman (${selectedIds.size} selected)`;
+  const n=visibleIds.filter(id=>selectedIds.has(id)).length, a=$('selAll');
+  a.checked=!!visibleIds.length&&n===visibleIds.length; a.indeterminate=n>0&&n<visibleIds.length;
+}
+$('selAll').onchange=e=>{ visibleIds.forEach(id=>e.target.checked?selectedIds.add(id):selectedIds.delete(id)); render(); };
+$('tbody').onchange=e=>{ const c=e.target.closest('input.sel'); if(!c) return; c.checked?selectedIds.add(c.dataset.id):selectedIds.delete(c.dataset.id); updateSelUI(); };
 $('tbody').onclick=e=>{
+  if(e.target.closest('.selcol')) return;
   const seg=e.target.closest('.seg button');
   if(seg){ const id=seg.parentElement.dataset.id; results[id]=results[id]===seg.dataset.r?undefined:seg.dataset.r; if(!results[id]) delete results[id];
     const tr=document.querySelector(`tr.tc[data-id="${id}"]`), r=results[id]||'';

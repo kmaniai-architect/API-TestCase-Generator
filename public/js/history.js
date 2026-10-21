@@ -31,6 +31,10 @@ async function syncHistory(){
   renderHistory();
 }
 const titleOf=e=>e.title||autoTitle(e);
+const INPUT_LABEL={manual:'Manually',pdf:'PDF',swagger:'Swagger',url:'URL'}, INPUT_ICON={manual:'✍',pdf:'📄',swagger:'🔗',url:'🔗'};
+const inputType=e=>(e.input&&INPUT_LABEL[e.input.type])?e.input.type:'manual';
+const srcLabel=e=>INPUT_LABEL[inputType(e)]+' '+(e.input&&e.input.name||'');
+const srcBadge=e=>{ const t=inputType(e), n=e.input&&e.input.name||''; return `<div class="hmeta hsrc ${t}" title="${esc(n)}">${INPUT_ICON[t]} Input: <b>${INPUT_LABEL[t]}</b>${n?' · '+esc(n):''}</div>`; };
 const stamp=ts=>new Date(ts).toLocaleString([],{day:'numeric',month:'short',year:'numeric',hour:'numeric',minute:'2-digit'});
 function autoTitle(e){
   const p=String(e.endpoint).replace(/^[a-z]+:\/\/[^/]+/i,'').split('?')[0]||'/';
@@ -66,7 +70,7 @@ function groupOf(ts){
 let renaming=null;
 function renderHistory(){
   const all=loadHistory(), q=$('histSearch').value.trim().toLowerCase();
-  const list=all.filter(e=>!q||(titleOf(e)+e.endpoint+e.method).toLowerCase().includes(q));
+  const list=all.filter(e=>!q||(titleOf(e)+e.endpoint+e.method+srcLabel(e)).toLowerCase().includes(q));
   $('histCount').textContent=all.length;
   let html='', last='';
   for(const e of list){
@@ -76,7 +80,7 @@ function renderHistory(){
       ?`<input class="hren" data-ren="${e.id}" value="${esc(titleOf(e))}">`
       :`<div class="htitle" title="${esc(e.endpoint)}">${esc(titleOf(e))}</div>`;
     html+=`<div class="hitem ${e.id===currentHistoryId?'cur':''}" data-id="${e.id}">
-      <div class="hmain">${title}<div class="hurl" title="${esc(e.endpoint)}">${esc(e.endpoint)}</div><div class="hmeta">🕒 ${stamp(e.ts)}</div><div class="hmeta">${e.mode==='ai'?'🤖 AI':'⚙ Manual'} · ${e.cases.length} cases${r.length?` · ✅${p} ❌${f}`:''}</div></div>
+      <div class="hmain">${title}<div class="hurl" title="${esc(e.endpoint)}">${esc(e.endpoint)}</div>${srcBadge(e)}<div class="hmeta">🕒 ${stamp(e.ts)}</div><div class="hmeta">${e.mode==='ai'?'🤖 AI':'⚙ Manual'} · ${e.cases.length} cases${r.length?` · ✅${p} ❌${f}`:''}</div></div>
       <div class="hacts"><button data-act="ren" title="Rename">✎</button><button class="del" data-act="del" title="Delete">🗑</button></div></div>`;
   }
   $('histList').innerHTML=html||`<div class="empty" style="font-size:13px">${all.length?'No matches.':'No saved suites yet.<br>Generate one and it shows up here.'}</div>`;
@@ -91,14 +95,14 @@ function openHistoryItem(id){
   $('resBody').value=e.res!==undefined?JSON.stringify(e.res,null,2):'';
   $('notes').value=e.notes||'';
   ['reqBody','resBody'].forEach(i=>$(i).dispatchEvent(new Event('input'))); chips();
-  cases=e.cases; results={...e.results}; openIds.clear(); allOpen=false; catFilter=''; currentHistoryId=e.id;
+  cases=e.cases; results={...e.results}; openIds.clear(); selectedIds.clear(); allOpen=false; catFilter=''; currentHistoryId=e.id;
   $('toggleAll').textContent='Expand all';
   buildDash(); buildCats(); render();
   $('results').hidden=false; renderHistory(); closeMobileSidebar();
   window.scrollTo({top:0,behavior:'smooth'});
 }
 function newSuite(){
-  currentHistoryId=null; cases=[]; results={};
+  currentHistoryId=null; cases=[]; results={}; selectedIds.clear(); impReset();
   $('reqBody').value=$('resBody').value=$('notes').value=''; $('err').textContent='';
   ['reqBody','resBody'].forEach(i=>$(i).dispatchEvent(new Event('input')));
   $('results').hidden=true; renderHistory(); closeMobileSidebar();

@@ -39,7 +39,6 @@ async function runAgent(work){
 
 async function callLLM(payload){
   const headers={'Content-Type':'application/json'};
-  const key=$('apiKey').value.trim(); if(key) headers['x-api-key']=key;
   let r;
   try{ r=await fetch('/api/generate',{method:'POST',headers,body:JSON.stringify(payload)}); }
   catch{ throw new Error('Cannot reach the server. Run "npm start" and open http://localhost:3000.'); }
@@ -58,17 +57,18 @@ $('gen').onclick=async()=>{
   $('err').textContent='';
   const endpoint=$('endpoint').value.trim();
   if(!endpoint) return fail('Please enter an endpoint.');
+  const hs=pmState(); if(hs.errs.length) return fail('Fix the header issues first: '+hs.errs[0]);
   let req,res;
   try{ req=['POST','PUT','PATCH'].includes(method)?parse('reqBody','Request body'):undefined; res=parse('resBody','Response body'); }
   catch(e){ return fail(e.message); }
   if(['POST','PUT','PATCH'].includes(method)&&req===undefined) return fail(`Please provide a request body for ${method}.`);
   if(method==='GET'&&res===undefined) return fail('Please provide the expected response body for GET.');
   if(mode==='ai'&&!serverUp) return fail('AI mode needs the server. Run "npm start" and open http://localhost:3000, or switch to Manual.');
-  if(mode==='ai'&&needsKey()&&!$('apiKey').value.trim()) return fail(`Enter an API key for ${providerLabel()} (or set it in .env and restart the server).`);
+  if(mode==='ai'&&!llmReady()) return fail('No LLM is configured. Add an API key to .env (e.g. GEMINI_API_KEY) and restart the server, or switch to Manual.');
   $('gen').disabled=true; $('results').hidden=true;
   let ai=[], base=[];
   if(mode==='ai'){
-    try{ ai=await runAgent(callLLM({method,endpoint,request:req,response:res,notes:$('notes').value.trim(),provider:$('provider').value,model:$('model').value.trim()})); }
+    try{ ai=await runAgent(callLLM({method,endpoint,request:req,response:res,headers:hs.list.map(h=>({name:h.k,value:h.secret?'<redacted>':h.v})),notes:$('notes').value.trim()})); }
     catch(e){ $('gen').disabled=false; return fail('AI generation failed: '+e.message); }
     if($('baseline').checked) base=generate(method,endpoint,req,res);
   } else {
@@ -77,9 +77,11 @@ $('gen').onclick=async()=>{
   }
   $('gen').disabled=false;
   const seen=new Set(base.map(x=>x.title.toLowerCase()));
+  selectedIds.clear();
   cases=base.concat(ai.filter(x=>!seen.has(x.title.toLowerCase()))).map((x,i)=>({...x,id:'TC'+String(i+1).padStart(3,'0')}));
   openIds.clear(); results={}; allOpen=false; catFilter='';
-  saveHistory({method,endpoint,mode,req,res,notes:$('notes').value.trim(),cases});
+  const fromImport=impSrc&&impSrc.method===method&&impStillMatches(impSrc.endpoint,endpoint);   // still the imported values, not edited by hand
+  saveHistory({method,endpoint,mode,req,res,notes:$('notes').value.trim(),cases,input:fromImport?{type:impSrc.type,name:impSrc.name}:{type:'manual'}});
   $('toggleAll').textContent='Expand all';
   buildDash(); buildCats(); render();
   $('results').hidden=false; $('results').scrollIntoView({behavior:'smooth'});
