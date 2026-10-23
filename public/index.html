@@ -4,7 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>API Test Case Agent</title>
+<script>try{var t=localStorage.getItem("theme");if(t!=="light"&&t!=="dark")t=matchMedia("(prefers-color-scheme:dark)").matches?"dark":"light";document.documentElement.dataset.theme=t}catch(e){document.documentElement.dataset.theme="light"}</script>
 <link rel="stylesheet" href="css/styles.css">
+<link rel="stylesheet" href="css/polish.css">
 </head>
 <body>
 <div class="app">
@@ -20,6 +22,7 @@
 <div class="content">
 <header>
   <button class="menu" id="menuBtn" title="Toggle sidebar">☰</button>
+  <button class="themeBtn" id="themeBtn" type="button" role="switch" aria-checked="false" aria-label="Dark mode" title="Toggle dark mode"><span class="sun">☀️</span><span class="moon">🌙</span></button>
   <div class="orb a"></div><div class="orb b"></div>
   <h1><span class="bot">🤖</span> API Test Case Agent <span class="mode" id="modeBadge">Manual · offline</span></h1>
   <p>Give it an endpoint, a method and your request / response bodies — choose offline rules or an LLM (Gemini, Claude, OpenAI…) to design the test suite.</p>
@@ -197,6 +200,7 @@
 </div>
 <div class="toast" id="toast"></div>
 
+<script src="js/theme.js"></script>
 <script src="js/config.js"></script>
 <script src="js/utils.js"></script>
 <script src="js/generator.js"></script>

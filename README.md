@@ -5,6 +5,12 @@ with offline rules or an LLM, tick the cases you want, and export them as **CSV*
 **Postman collection**. Past suites live in the left sidebar (like a chat history) and are saved in `testcase.db`
 (SQLite, built into Node 22.5+; set `DB_FILE` in `.env` to move it), so they survive restarts.
 
+## Look & feel
+
+A ☀️/🌙 switch in the top-right corner toggles **dark mode**. It follows your OS setting until you pick one, and then
+remembers your choice. Buttons have a ripple, cards/stats/history items lift on hover, dialogs fade and spring in, and
+keyboard focus is clearly outlined.
+
 ## Generation modes (Manual / AI toggle)
 
 | Mode | How it generates | Needs |
@@ -124,7 +130,7 @@ server.js          static server + API: /api/status, /api/generate (provider ada
                    /api/suites (SQLite history), /api/fetch-url (URL import proxy)
 .env.example       all supported keys / model overrides
 public/
-  index.html, css/styles.css
+  index.html, css/styles.css, css/polish.css (theme + interaction polish)
   js/  config        shared state and constants
        utils         helpers
        generator     Manual (offline rules) engine
@@ -136,5 +142,6 @@ public/
        export        CSV / JSON export
        postman       headers & auth editor + Postman collection/environment export
        history       sidebar (date groups, input-mode labels)
+       theme         dark-mode switch + button ripple
        main          start-up
 ```

@@ -1,6 +1,7 @@
 :root{--bg:#f4f6fb;--card:#fff;--ink:#1c2333;--mute:#667085;--line:#e3e8ef;--brand:#6366f1;--brand2:#8b5cf6;
         --ok:#10b981;--bad:#ef4444;--warn:#f59e0b;--shadow:0 8px 30px rgba(79,70,229,.08)}
-  @media (prefers-color-scheme:dark){:root{--bg:#0d1220;--card:#161c2e;--ink:#e6e9f2;--mute:#9aa3b8;--line:#272f47;--shadow:0 8px 30px rgba(0,0,0,.35)}}
+  :root{color-scheme:light}
+  :root[data-theme=dark]{color-scheme:dark;--bg:#0b1020;--card:#151b2e;--ink:#e8ebf5;--mute:#9aa4bd;--line:#273049;--brand:#7c83ff;--brand2:#a78bfa;--shadow:0 10px 34px rgba(0,0,0,.45)}
   *{box-sizing:border-box}
   body{margin:0;font:14px/1.5 system-ui,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--ink)}
   header{position:relative;overflow:hidden;padding:34px 24px;color:#fff;background:linear-gradient(120deg,#4f46e5,#7c3aed,#06b6d4,#4f46e5);background-size:300% 300%;animation:flow 12s ease infinite}

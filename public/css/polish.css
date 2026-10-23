@@ -1,0 +1,62 @@
+/* ================= UI polish: theme toggle, dark-mode fixes, micro-interactions (no layout changes) ================= */
+html{scroll-behavior:smooth}
+::selection{background:rgba(99,102,241,.3)}
+*{scrollbar-width:thin;scrollbar-color:var(--line) transparent}
+::-webkit-scrollbar{width:9px;height:9px}::-webkit-scrollbar-thumb{background:var(--line);border-radius:9px}::-webkit-scrollbar-thumb:hover{background:var(--mute)}
+::placeholder{color:var(--mute);opacity:.7}
+input[type=checkbox],input[type=radio]{accent-color:var(--brand)}
+html.theme-anim *:not(textarea){transition:background-color .35s,color .35s,border-color .35s,box-shadow .35s!important}
+
+/* focus + hover affordances */
+:focus-visible{outline:2px solid var(--brand);outline-offset:2px;border-radius:8px}
+input:hover,select:hover,textarea:hover{border-color:color-mix(in srgb,var(--brand) 45%,var(--line))}
+.btn,.tab,.cat,.newbtn{position:relative;overflow:hidden}
+.btn.ghost:hover{border-color:var(--brand);color:var(--brand)}
+.btn:disabled{opacity:.55;cursor:not-allowed;transform:none}
+.primary:hover{box-shadow:0 12px 26px rgba(99,102,241,.45)}
+.card{transition:box-shadow .25s,border-color .25s}
+.card:hover{border-color:color-mix(in srgb,var(--brand) 25%,var(--line))}
+.card:focus-within{box-shadow:0 10px 36px rgba(99,102,241,.16)}
+.stat{transition:transform .2s,box-shadow .2s,border-color .2s}
+.stat:hover{transform:translateY(-3px);box-shadow:0 10px 22px rgba(99,102,241,.14);border-color:var(--brand)}
+.hitem{transition:background .15s,transform .15s}.hitem:hover{transform:translateX(3px)}
+.hitem.cur{box-shadow:inset 3px 0 var(--brand)}
+.tab:hover{background:rgba(99,102,241,.08);border-radius:8px 8px 0 0}
+tr.tc:hover td:first-child{box-shadow:inset 3px 0 var(--brand)}
+.hrow{transition:opacity .2s}.hrow:has(.hon:not(:checked)){opacity:.55}
+.imptable tbody tr{transition:background .15s}.imptable tbody tr:hover{background:rgba(99,102,241,.07)}
+.live{transition:border-color .2s}.live:hover{border-color:var(--brand)}
+.sw:hover i{filter:brightness(1.08)}
+
+/* modals: blurred backdrop + spring-in */
+.modal{backdrop-filter:blur(4px);animation:fadein .2s ease both}
+.modal:not([hidden]) .mbox{animation:popin .28s cubic-bezier(.2,1.2,.4,1) both}
+@keyframes fadein{from{opacity:0}}
+@keyframes popin{from{opacity:0;transform:translateY(14px) scale(.96)}}
+
+/* ripple (added by theme.js) */
+.ripple{position:absolute;border-radius:50%;background:rgba(255,255,255,.45);transform:scale(0);animation:ripple .55s ease-out forwards;pointer-events:none}
+.ghost .ripple,.tab .ripple,.cat .ripple,.newbtn .ripple{background:rgba(99,102,241,.25)}
+@keyframes ripple{to{transform:scale(1);opacity:0}}
+
+/* theme toggle (top-right corner of the header) */
+.themeBtn{position:absolute;top:16px;right:16px;z-index:5;display:flex;align-items:center;gap:4px;padding:4px;border-radius:999px;border:1px solid rgba(255,255,255,.45);background:rgba(255,255,255,.18);cursor:pointer;color:#fff;backdrop-filter:blur(6px);transition:background .2s,transform .15s}
+.themeBtn:hover{background:rgba(255,255,255,.3)}.themeBtn:active{transform:scale(.95)}
+.themeBtn span{width:30px;height:30px;display:grid;place-items:center;border-radius:50%;font-size:15px;line-height:1;transition:background .3s,transform .3s,opacity .3s;opacity:.6}
+[data-theme=light] .themeBtn .sun,[data-theme=dark] .themeBtn .moon{background:#fff;opacity:1;transform:scale(1.05);box-shadow:0 2px 8px rgba(0,0,0,.25)}
+.themeBtn:focus-visible{outline-color:#fff}
+
+/* dark-mode corrections for colours that were hard-coded for light */
+[data-theme=dark] .High{background:rgba(239,68,68,.18);color:#fca5a5}
+[data-theme=dark] .Medium{background:rgba(245,158,11,.18);color:#fcd34d}
+[data-theme=dark] .Low{background:rgba(16,185,129,.18);color:#6ee7b7}
+[data-theme=dark] .toast{background:#232b45;border:1px solid var(--line)}
+[data-theme=dark] .primary{box-shadow:0 8px 22px rgba(124,131,255,.3)}
+[data-theme=dark] .modal{background:rgba(3,6,15,.65)}
+[data-theme=dark] .GET{color:#34d399}[data-theme=dark] .POST{color:#60a5fa}[data-theme=dark] .PUT{color:#fbbf24}[data-theme=dark] .PATCH{color:#a78bfa}[data-theme=dark] .DELETE{color:#f87171}
+[data-theme=dark] .hsrc.pdf{color:#fbbf24}[data-theme=dark] .hsrc.url,[data-theme=dark] .hsrc.swagger{color:#34d399}
+[data-theme=dark] .llmline{background:rgba(124,131,255,.12)}
+[data-theme=dark] input:-webkit-autofill{-webkit-box-shadow:0 0 0 30px var(--bg) inset;-webkit-text-fill-color:var(--ink)}
+
+/* layering: dialogs above the sticky sidebar, toast above dialogs */
+.modal{z-index:50}.toast{z-index:60}
