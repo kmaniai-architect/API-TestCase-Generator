@@ -20,17 +20,22 @@ function updateRing(){
 function buildCats(){
   const counts={}; cases.forEach(x=>counts[x.category]=(counts[x.category]||0)+1);
   const ai=cases.filter(x=>x.source==='AI'), llms=[...new Set(ai.map(x=>x.llm).filter(Boolean))];
-  $('cats').innerHTML=`<button class="cat on" data-c="">All<em>${cases.length}</em></button>`+
-    (ai.length?`<button class="cat ai" data-c="${AI_CAT}" title="${esc(llms.join(', ')||'Written by the LLM')}">🤖 AI generated${llms.length===1?' · '+esc(llms[0].split(' · ')[0].replace(/ \(.*\)/,'')):''}<em>${ai.length}</em></button>`:'')+
-    Object.entries(counts).map(([k,v],i)=>`<button class="cat" data-c="${esc(k)}" style="animation-delay:${i*40}ms">${esc(k)}<em>${v}</em></button>`).join('');
+  $('cats').innerHTML=`<button class="cat ${catFilter.size?'':'on'}" data-c="" title="Show every category">All<em>${cases.length}</em></button>`+
+    (ai.length?`<button class="cat ai ${catFilter.has(AI_CAT)?'on':''}" data-c="${AI_CAT}" title="${esc(llms.join(', ')||'Written by the LLM')}">🤖 AI generated${llms.length===1?' · '+esc(llms[0].split(' · ')[0].replace(/ \(.*\)/,'')):''}<em>${ai.length}</em></button>`:'')+
+    Object.entries(counts).map(([k,v],i)=>`<button class="cat ${catFilter.has(k)?'on':''}" data-c="${esc(k)}" title="Click to add or remove this category" style="animation-delay:${i*40}ms">${esc(k)}<em>${v}</em></button>`).join('');
 }
-$('cats').onclick=e=>{ const b=e.target.closest('.cat'); if(!b) return; catFilter=b.dataset.c;
-  document.querySelectorAll('.cat').forEach(x=>x.classList.toggle('on',x===b)); render(); };
+/* category chips are multi-select: click to add / remove one (Functional + Boundary …); "All" clears the choice */
+$('cats').onclick=e=>{
+  const b=e.target.closest('.cat'); if(!b) return; const c=b.dataset.c;
+  if(!c) catFilter.clear(); else if(catFilter.has(c)) catFilter.delete(c); else catFilter.add(c);
+  document.querySelectorAll('.cat').forEach(x=>x.classList.toggle('on',x.dataset.c?catFilter.has(x.dataset.c):!catFilter.size));
+  render();
+};
 
 /* ---------- table ---------- */
 function render(){
   const q=$('q').value.toLowerCase(),t=$('fType').value,p=$('fPri').value,s=$('fSrc').value;
-  const rows=cases.filter(x=>(!catFilter||(catFilter===AI_CAT?x.source==='AI':x.category===catFilter))&&(!t||x.type===t)&&(!p||x.priority===p)&&(!s||x.source===s)&&
+  const rows=cases.filter(x=>(!catFilter.size||[...catFilter].some(c=>c===AI_CAT?x.source==='AI':x.category===c))&&(!t||x.type===t)&&(!p||x.priority===p)&&(!s||x.source===s)&&
     (!q||(x.id+x.title+x.category+x.expected+x.status).toLowerCase().includes(q)));
   $('tbody').innerHTML=rows.length?rows.map((x,i)=>{
     const open=openIds.has(x.id), r=results[x.id]||'';
@@ -63,7 +68,9 @@ function updateSelUI(){
   $('postman').textContent=`⬇ Postman (${selectedIds.size} selected)`;
   const n=visibleIds.filter(id=>selectedIds.has(id)).length, a=$('selAll');
   a.checked=!!visibleIds.length&&n===visibleIds.length; a.indeterminate=n>0&&n<visibleIds.length;
+  $('selShown').textContent=visibleIds.length&&n===visibleIds.length?`☐ Unselect shown (${visibleIds.length})`:`☑ Select shown (${visibleIds.length})`;
 }
+$('selShown').onclick=()=>{ const all=visibleIds.length&&visibleIds.every(id=>selectedIds.has(id)); visibleIds.forEach(id=>all?selectedIds.delete(id):selectedIds.add(id)); render(); };
 $('selAll').onchange=e=>{ visibleIds.forEach(id=>e.target.checked?selectedIds.add(id):selectedIds.delete(id)); render(); };
 $('tbody').onchange=e=>{ const c=e.target.closest('input.sel'); if(!c) return; c.checked?selectedIds.add(c.dataset.id):selectedIds.delete(c.dataset.id); updateSelUI(); };
 $('tbody').onclick=e=>{

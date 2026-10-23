@@ -117,7 +117,7 @@ function openHistoryItem(id){
   $('resBody').value=e.res!==undefined?JSON.stringify(e.res,null,2):'';
   $('notes').value=e.notes||'';
   ['reqBody','resBody'].forEach(i=>$(i).dispatchEvent(new Event('input'))); chips();
-  cases=e.cases; results={...e.results}; openIds.clear(); selectedIds.clear(); allOpen=false; catFilter=''; currentHistoryId=e.id; pendingSuite=null;
+  cases=e.cases; results={...e.results}; openIds.clear(); selectedIds.clear(); allOpen=false; catFilter=new Set(); currentHistoryId=e.id; pendingSuite=null;
   $('toggleAll').textContent='Expand all';
   buildDash(); buildCats(); render();
   $('results').hidden=false; renderHistory(); updateSaveBtn(); closeMobileSidebar();

@@ -224,7 +224,7 @@ function tabRestore(st){
   if(impOps.length) impList(); else { $('impList').innerHTML=''; $('impCount').textContent=''; }
   if(impOps.length) $('impCount').textContent=i.count;
   $('impFile').value='';
-  cases=s.cases; results=s.results; openIds=new Set(s.open); selectedIds=new Set(s.selected); allOpen=s.allOpen; catFilter=''; currentHistoryId=s.hid; pendingSuite=s.pending;
+  cases=s.cases; results=s.results; openIds=new Set(s.open); selectedIds=new Set(s.selected); allOpen=s.allOpen; catFilter=new Set(); currentHistoryId=s.hid; pendingSuite=s.pending;
   if(cases.length){ buildDash(); buildCats(); $('toggleAll').textContent=allOpen?'Collapse all':'Expand all'; render(); $('results').hidden=false; }
   else $('results').hidden=true;
   $('err').textContent='';

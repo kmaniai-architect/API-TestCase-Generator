@@ -128,6 +128,9 @@ Invalid headers block **Generate** while the switch is on.
 
 - Search, filter by type / priority / source, category chips, expandable rows with steps and expected result.
 - Mark each case **Pass / Fail / Blocked**; progress ring shows how many are executed.
+- **Category chips are multi-select**: click *Functional*, then *Boundary* … to show several categories together (click again to
+  remove one; **All** clears the choice). **☑ Select shown** (or the header checkbox) ticks everything currently shown, so
+  "only Functional + Boundary" is: pick the two chips → Select shown → CSV / Postman. Ticks are kept while you change filters.
 - A **checkbox column** (with select-all for the rows currently shown) chooses which cases to export.
 
 ## Exports (act on the ticked cases)
@@ -214,11 +217,12 @@ Restart the server after any of these.
 
 **AI mode: `HTTP 503 … high demand` (or 429 / 500 / 502 / 504)**
 
-The provider is overloaded or rate-limiting you — temporary, not a problem with your key. The server now retries up to 3 times
-(after 2 s, 6 s, 15 s, or the provider's `Retry-After`) before giving up. If it keeps failing, wait a minute and press Generate
-again, or add a second model to fall back to in `.env`, e.g. `GEMINI_FALLBACK_MODEL=<another model name>` (the same pattern works
-for every provider: `OPENAI_FALLBACK_MODEL`, `ANTHROPIC_FALLBACK_MODEL` …). The model that actually answered is shown on the
-AI badge of each case.
+The provider is overloaded or rate-limiting you — temporary, not a problem with your key. The server retries up to 5 times
+(after 2, 5, 12, 25 and 45 s — about 90 s — or the provider's `Retry-After`) before giving up. Ways to make it more robust:
+- `GEMINI_FALLBACK_MODEL=<another model name>` in `.env` (same pattern for every provider: `OPENAI_FALLBACK_MODEL`, …) — tried when the main model stays overloaded;
+- `LLM_FALLBACK_PROVIDER=openai` (or `groq`, `anthropic`, `ollama` …, any provider that has a key) — a different company's model is
+  used when the main provider is still overloaded after all retries. The server log says which one answered.
+If everything fails during a PDF read, the built-in result stays on screen with a **↻ Try the AI again** button.
 
 **AI mode: `… returned HTTP 403` (or 401)**
 
