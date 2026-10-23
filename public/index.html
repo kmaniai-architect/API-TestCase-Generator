@@ -48,7 +48,7 @@
       <div data-imp-pane="url" hidden>
         <div class="row" style="flex-wrap:nowrap"><input id="impUrl" placeholder="OpenAPI / Swagger JSON URL, or an endpoint that returns JSON" autocomplete="off"><button class="btn primary" id="impFetch" type="button">Fetch</button></div>
       </div>
-      <div data-imp-pane="pdf" hidden><input type="file" id="impFile" accept="application/pdf,.pdf"><div class="hint">API documentation with lines like <code>POST /v1/users</code> and JSON examples. Text is read in your browser; the PDF is not uploaded.</div></div>
+      <div data-imp-pane="pdf" hidden><input type="file" id="impFile" accept="application/pdf,.pdf"><div class="hint">API documentation: <b>tables</b> (Endpoint · Method · Header · Source · Destination · Operation, plus request-parameter and response tables with sample data) or plain lines like <code>POST /v1/users</code> with JSON examples. Text is read in your browser; the PDF is not uploaded.</div></div>
       <div class="hint" id="impMsg"></div>
       <div id="impBaseRow" hidden><label for="impBase"><span>Base URL <small style="font-weight:400;color:var(--mute)">(prepended to relative paths)</small></span></label><input id="impBase" placeholder="https://api.example.com" autocomplete="off"></div>
       <input id="impFilter" placeholder="🔍 Filter operations…" hidden autocomplete="off">
@@ -206,6 +206,7 @@
 <script src="js/generator.js"></script>
 <script src="js/input.js"></script>
 <script src="js/import.js"></script>
+<script src="js/pdftables.js"></script>
 <script src="js/mode.js"></script>
 <script src="js/agent.js"></script>
 <script src="js/ui.js"></script>

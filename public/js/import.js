@@ -164,7 +164,7 @@ function impList(){
   const cell=(v,show)=>!show?'<span class="na">n/a</span>':v===undefined?'<span class="na">not found</span>':`<pre>${esc(JSON.stringify(v,null,2))}</pre>`;
   $('impList').innerHTML=rows.length?`<div class="imptwrap"><table class="imptable"><thead><tr><th>#</th><th>Method</th><th>Endpoint</th><th>Request</th><th>Response</th><th></th></tr></thead><tbody>`+
     rows.map(([o,i])=>`<tr data-i="${i}"><td>${i+1}</td><td><span class="m ${o.method}">${o.method}</span></td>
-      <td class="impu"><code>${esc(o.url)}</code>${o.summary?`<small>${esc(o.summary)}</small>`:''}</td>
+      <td class="impu"><code>${esc(o.url)}</code>${o.summary?`<small>${esc(o.summary)}</small>`:''}${o.meta?[['Header',o.meta.headers],['Source',o.meta.source],['Destination',o.meta.destination]].filter(m=>m[1]).map(m=>`<small><b>${m[0]}:</b> ${esc(m[1])}</small>`).join(''):''}</td>
       <td>${cell(o.req,['POST','PUT','PATCH'].includes(o.method))}</td><td>${cell(o.res,true)}</td>
       <td><button type="button" class="btn ghost impuse">Use</button></td></tr>`).join('')+'</tbody></table></div>'
     :'<div class="hint">No match</div>';
@@ -245,6 +245,13 @@ $('impFile').onchange=async e=>{
   try{
     await impLoadPdfJs();
     const pdf=await pdfjsLib.getDocument({data:new Uint8Array(await f.arrayBuffer())}).promise;
+    // 1) tables (Endpoint | Method | Header | Source | Destination | Operation, parameter and response tables)
+    const __rows=await impPdfRows(pdf), tbl=impFromTables(__rows);
+    if(tbl.ops.length){
+      tbl.note+=impFillFromJsonBlocks(tbl.ops,__rows);
+      impMsg(`✓ ${pdf.numPages} page${pdf.numPages>1?'s':''} read — found ${tbl.ops.length} endpoint${tbl.ops.length>1?'s':''} in tables. Click one to fill the form.${esc(tbl.note)}`,'ok'); impShow(tbl.ops,''); e.target.value=''; return;
+    }
+    // 2) running text (labelled "Endpoint : … Method : …" blocks, "POST /v1/users" lines)
     let text='';
     for(let p=1;p<=Math.min(pdf.numPages,200);p++){
       const c=await (await pdf.getPage(p)).getTextContent();

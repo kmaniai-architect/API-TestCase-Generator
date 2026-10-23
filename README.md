@@ -31,7 +31,17 @@ response body), which you can still edit before generating.
 
 If a URL fails with a certificate error, see [Troubleshooting](#troubleshooting).
 
-Supported PDF layouts (scanned/image-only PDFs can't be read):
+**Tables in the PDF** are read by their position on the page, so wrapped text, centred headers and tables that span
+pages work:
+- an *operations table* — columns **Endpoint, Method** plus any of **Header, Source, Destination, Operation** — gives the
+  endpoint list (header/source/destination show under each endpoint);
+- *request-parameter* and *response* tables — columns **Name/Parameter/Field**, **Type**, **Required**, **Sample/Example**,
+  **Description** — are turned into JSON bodies (`address.city` becomes a nested object, `items[0].id` an array). A table is
+  matched to its endpoint by its heading (`API 2`, the operation name or the last path segment); otherwise by document
+  order, and the page tells you when it had to guess;
+- sample data given as plain JSON blocks instead of tables is used for whatever is still missing, when the counts match.
+
+Other supported layouts (scanned/image-only PDFs can't be read):
 
 ```
 API 1:                                   POST /v1/users
