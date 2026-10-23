@@ -14,6 +14,13 @@ try {
   }
 } catch { /* no .env file */ }
 
+// Trust the operating system's certificate store as well (corporate proxies / antivirus that re-sign HTTPS
+// install their root CA there). Needs Node 22.19+/24.5+; older versions can use NODE_EXTRA_CA_CERTS or --use-system-ca.
+try {
+  const tls = require('tls');
+  if (tls.getCACertificates && tls.setDefaultCACertificates) tls.setDefaultCACertificates([...tls.getCACertificates('default'), ...tls.getCACertificates('system')]);
+} catch { /* keep Node's built-in CAs */ }
+
 const PORT = process.env.PORT || 3000;
 const PUBLIC = path.join(__dirname, 'public');
 const DB_FILE = path.join(__dirname, (process.env.DB_FILE || '').trim() || 'testcase.db');
@@ -215,12 +222,39 @@ const clearSuites = () => db.exec('DELETE FROM suites');
 async function fetchForImport(url) {
   let u; try { u = new URL(String(url)); } catch { throw Object.assign(new Error('Enter a valid http(s) URL'), { status: 400 }); }
   if (!/^https?:$/.test(u.protocol)) throw Object.assign(new Error('Only http(s) URLs are supported'), { status: 400 });
+  if (/^(1|true|yes)$/i.test(env('IMPORT_INSECURE_TLS'))) return fetchInsecure(u);   // opt-in escape hatch (see .env.example)
   let r;
   try { r = await fetch(u, { headers: { Accept: 'application/json, text/plain;q=0.9, */*;q=0.5' }, signal: AbortSignal.timeout(15000) }); }
-  catch (e) { throw Object.assign(new Error(`Could not reach ${u.host}: ${e.cause?.code || e.message}`), { status: 502 }); }
+  catch (e) {
+    const code = e.cause?.code || e.message;
+    throw Object.assign(new Error(`Could not reach ${u.host}: ${code}` + (TLS_CODES.test(code) ? TLS_HELP : '')), { status: 502 });
+  }
   const MAX = 3e6, chunks = []; let size = 0;
   for await (const c of r.body) { size += c.length; if (size > MAX) throw Object.assign(new Error('Response is larger than 3 MB'), { status: 413 }); chunks.push(c); }
   return { url: r.url, status: r.status, contentType: r.headers.get('content-type') || '', text: Buffer.concat(chunks).toString('utf8') };
+}
+const TLS_CODES = /CERT|SELF_SIGNED|ISSUER|TLS|SSL|UNABLE_TO_VERIFY|SIGNATURE/i;
+const TLS_HELP = " — the server could not verify the site's HTTPS certificate. This usually means a corporate proxy or antivirus is re-signing HTTPS traffic. " +
+  "Fix: point Node at your organisation's root CA before starting (PowerShell: $env:NODE_EXTRA_CA_CERTS='C:/certs/corp-root.pem'; npm start), " +
+  "or start with: node --use-system-ca server.js. For local testing only you can set IMPORT_INSECURE_TLS=true in .env to skip certificate checks for URL imports.";
+// URL import without certificate verification — only used when IMPORT_INSECURE_TLS=true; GET only, size/time capped, follows up to 5 redirects
+function fetchInsecure(u, hops = 0) {
+  const lib = u.protocol === 'https:' ? require('https') : require('http');
+  return new Promise((resolve, reject) => {
+    const fail = e => reject(Object.assign(new Error(`Could not reach ${u.host}: ${e.code || e.message}`), { status: 502 }));
+    const req = lib.get(u, { rejectUnauthorized: false, timeout: 15000, headers: { Accept: 'application/json, text/plain;q=0.9, */*;q=0.5' } }, res => {
+      if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location && hops < 5) {
+        res.resume();
+        try { return resolve(fetchInsecure(new URL(res.headers.location, u), hops + 1)); } catch (e) { return fail(e); }
+      }
+      const MAX = 3e6, chunks = []; let size = 0;
+      res.on('data', c => { size += c.length; if (size > MAX) { req.destroy(); reject(Object.assign(new Error('Response is larger than 3 MB'), { status: 413 })); } else chunks.push(c); });
+      res.on('end', () => resolve({ url: u.href, status: res.statusCode, contentType: res.headers['content-type'] || '', text: Buffer.concat(chunks).toString('utf8') }));
+      res.on('error', fail);
+    });
+    req.on('timeout', () => req.destroy(Object.assign(new Error('timed out'), { code: 'ETIMEDOUT' })));
+    req.on('error', fail);
+  });
 }
 
 /* ---------- http server ---------- */

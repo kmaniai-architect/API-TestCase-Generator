@@ -29,6 +29,8 @@ response body), which you can still edit before generating.
 | 📄 **PDF Based** | Choose an API-documentation PDF. Every endpoint found is listed in a table (method, endpoint, request, response); click **Use** on a row to fill the form. Text is read in your browser — the PDF is not uploaded (the PDF reader, pdf.js, is loaded from cdnjs, so first use needs internet). |
 | 🔗 **Swagger / URL Based** | Paste an OpenAPI/Swagger **JSON** URL to list all its operations (example bodies are taken from the spec or built from its schemas), or paste an endpoint that returns JSON to use that response as the expected response. YAML specs are not supported yet. |
 
+If a URL fails with a certificate error, see [Troubleshooting](#troubleshooting).
+
 Supported PDF layouts (scanned/image-only PDFs can't be read):
 
 ```
@@ -122,6 +124,31 @@ hard-refresh the page (Ctrl+F5). Manual mode needs no key; the page must be open
 for history, URL import and AI mode.
 
 Adding another OpenAI-compatible provider = one line in the `PROVIDERS` table in `server.js`.
+
+## Troubleshooting
+
+**URL import: `Could not reach … unable to get issuer cert locally` (or `UNABLE_TO_VERIFY_LEAF_SIGNATURE`, `SELF_SIGNED_CERT_IN_CHAIN`)**
+
+Your network (corporate proxy, VPN or antivirus) re-signs HTTPS traffic with its own root certificate, which Node does not
+trust by default. Try, in this order:
+
+1. **Update Node** to 22.19+ / 24.5+. The server then also trusts the operating system's certificate store, where your IT
+   department's root CA normally lives — no configuration needed. Check with `node -v`.
+2. **Give Node the root CA** (export it from the Windows certificate store as Base-64 `.pem`, or ask IT):
+   ```
+   $env:NODE_EXTRA_CA_CERTS="C:/certs/corp-root.pem"; npm start        # PowerShell
+   node --use-system-ca server.js                                       # alternative on newer Node
+   ```
+3. **Testing only:** add `IMPORT_INSECURE_TLS=true` to `.env` and restart. URL imports then skip certificate verification
+   (GET only, size/time capped). Don't leave this on for untrusted URLs.
+
+Restart the server after any of these.
+
+**Other quick checks**
+- *"Server not reachable" / history not saving* — open the app through `npm start` (http://localhost:3000), not the HTML file.
+- *AI mode says no LLM configured* — add a key to `.env` (e.g. `GEMINI_API_KEY`) and restart.
+- *PDF says no endpoints found* — the PDF must contain selectable text (not scanned images) in one of the layouts above.
+- *Page looks stale after an update* — hard-refresh with Ctrl+F5.
 
 ## Structure
 
