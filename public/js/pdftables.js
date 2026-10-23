@@ -35,20 +35,25 @@ const IMP_ROLES=[
   ['endpoint',/end\s*-?point|url|uri|path|resource/i],['method',/^\s*(http\s*)?(method|verb)/i],['header',/header/i],
   ['source',/source|consumer|caller/i],['destination',/destination|target|provider/i],['operation',/operation|action|service|api\s*name/i],
   ['sample',/sample|example|value|data/i],['type',/type/i],['required',/required|mandatory|optional/i],
+  ['index',/^\s*(s\.?\s*no\.?|sl\.?\s*no\.?|sr\.?\s*no\.?|no\.?|#|serial)\s*$/i],
   ['name',/^(request\s*|response\s*)?(parameter|param|field|attribute|property|element|key|name)/i],['description',/desc|remark|note|detail/i],
 ];
 const impRole=t=>{ const r=IMP_ROLES.find(([,re])=>re.test(t)); return r?r[0]:''; };
 
 /* a header can wrap over several physical lines ("Destination" / "Operation"): take the run of consecutive label-only rows */
-function impHeaderRun(rows,i){
-  const run=[];
-  for(let j=i;j<rows.length;j++){
-    const r=rows[j], prev=run[run.length-1];
-    if(!r.cells.length||!r.cells.every(c=>impRole(c.text))) break;
-    if(prev&&(r.page!==prev.page||prev.y-r.y>16)) break;
-    run.push(r);
+const impLabelLike=c=>/^[A-Za-z][A-Za-z .\/&()-]{0,28}$/.test(c.text.trim())&&!/^(GET|POST|PUT|PATCH|DELETE)$/i.test(c.text.trim());
+function impHeaderRuns(rows,i){   // candidate headers: the row alone, +1 line, +2 lines (centred headers wrap over several lines)
+  const first=rows[i]; if(!first||!first.cells.length) return [];
+  const roles=first.cells.map(c=>impRole(c.text)).filter(Boolean);
+  // the top line may also carry unlabelled columns ("S.No", "Remarks" …) as long as most cells are recognised headings
+  if(!(roles.length===first.cells.length||(new Set(roles).size>=2&&roles.length>=first.cells.length*0.5))) return [];
+  const out=[[first]];
+  for(let j=i+1;j<rows.length&&out.length<3;j++){
+    const r=rows[j], prev=out[out.length-1][out[out.length-1].length-1];
+    if(!r.cells.length||r.page!==prev.page||prev.y-r.y>16||!r.cells.every(c=>impRole(c.text)||impLabelLike(c))) break;
+    out.push(out[out.length-1].concat(r));
   }
-  return run;
+  return out;
 }
 function impMergeHeader(run){
   const flat=[]; run.forEach(r=>r.cells.forEach(c=>(c.parts||[c]).forEach(p=>flat.push({...p,y:r.y,cx:(p.x+p.x2)/2}))));
@@ -86,49 +91,58 @@ function impColumns(hdr,roles,dataRows){
 function impReadTables(rows){
   const tables=[]; let ctx=[], i=0;
   while(i<rows.length){
-    const run=impHeaderRun(rows,i), hdr=run.length?impMergeHeader(run):null, info=hdr&&impHeaderInfo(hdr);
-    if(!info){ if(rows[i].cells.length) ctx.push(rows[i].cells.map(c=>c.text).join(' ')); i++; continue; }
-    const labels=hdr.map(h=>h.text.toLowerCase()).join('|');
-    const hRef=hdr.map(h=>h.h).sort((a,b)=>a-b)[Math.floor(hdr.length/2)]||0;
-    // region = rows below the header until a gap, a bigger-font heading, or the next table header
-    const region=[]; let j=i+run.length, prev=run[run.length-1];
-    for(;j<rows.length;j++){
-      const r=rows[j], rh=Math.max(...r.cells.map(c=>c.h),0);
-      const nextRun=impHeaderRun(rows,j), nextHdr=nextRun.length&&impHeaderInfo(impMergeHeader(nextRun));
-      if(nextHdr){ if(impMergeHeader(nextRun).map(h=>h.text.toLowerCase()).join('|')===labels){ j+=nextRun.length-1; prev=nextRun[nextRun.length-1]; continue; } break; }   // header repeated on a new page / a different table
-      if(r.page===prev.page&&prev.y-r.y>45) break;
-      if(hRef&&rh>hRef*1.2) break;
-      if(r.cells.length===1&&/^\s*(\d+(\.\d+)*[.)]?\s|request|response|table\b|section\b)/i.test(r.cells[0].text)&&r.cells[0].x<=hdr[0].x+4+(hdr[0].cx-hdr[0].x)) break;
-      region.push(r); prev=r;
+    let hit=null, best=0;
+    for(const run of impHeaderRuns(rows,i)){   // a wrapped header may span 2-3 lines: keep the reading that recognises the most column roles (ties -> the shorter header)
+      const hdr=impMergeHeader(run), info=impHeaderInfo(hdr); if(!info) continue;
+      // score: distinct roles found, then how many of the lines are pure heading lines (every cell a known heading)
+      const score=new Set(info.roles.filter(Boolean)).size*10+run.filter(r=>r.cells.every(c=>impRole(c.text))).length, h=score>best?impReadOne(rows,i,run,hdr,info,ctx):null;
+      if(h){ hit=h; best=score; }
     }
-    const colOf=impColumns(hdr,info.roles,region), tbl={kind:info.kind,heading:ctx.slice(-3).join(' '),rec:[]};
-    const roleAt=k=>info.roles[k]||'';
-    // cells are often vertically centred, so a record's wrapped lines can sit ABOVE its anchor row (the one with the method / name):
-    // every other row joins the nearest anchor row on its page
-    const parsed=region.map(r=>{
-      const byRole={}; r.cells.forEach(c=>{ const role=roleAt(colOf(c.x)); if(role) byRole[role]=(byRole[role]?byRole[role]+(role==='endpoint'?'':' '):'')+c.text; });
-      const start=tbl.kind==='ops'?/^(GET|POST|PUT|PATCH|DELETE)$/i.test((byRole.method||'').trim()):!!(byRole.name||'').trim();
-      return {r,byRole,start};
-    });
-    const anchors=parsed.filter(p=>p.start);
-    if(anchors.length){
-      const groups=anchors.map(a=>[a]);
-      parsed.filter(p=>!p.start).forEach(p=>{
-        const same=anchors.filter(a=>a.r.page===p.r.page), pool=same.length?same:anchors;
-        const best=pool.reduce((m,a)=>Math.abs(a.r.y-p.r.y)<Math.abs(m.r.y-p.r.y)?a:m,pool[0]);
-        groups[anchors.indexOf(best)].push(p);
-      });
-      groups.forEach(g=>{
-        const rec={};
-        g.sort((x,y)=>x.r.page-y.r.page||y.r.y-x.r.y).forEach(p=>Object.entries(p.byRole).forEach(([role,t])=>{
-          rec[role]=(rec[role]?rec[role]+(role==='endpoint'?'':' '):'')+t;
-        }));
-        tbl.rec.push(rec);
-      });
-    }
-    tables.push(tbl); ctx=[]; i=j;
+    if(hit){ tables.push(hit.tbl); ctx=[]; i=hit.next; continue; }
+    if(rows[i].cells.length) ctx.push(rows[i].cells.map(c=>c.text).join(' '));
+    i++;
   }
   return tables;
+}
+function impReadOne(rows,i,run,hdr,info,ctx){
+  const labels=hdr.map(h=>h.text.toLowerCase()).join('|');
+  const hRef=hdr.map(h=>h.h).sort((a,b)=>a-b)[Math.floor(hdr.length/2)]||0;
+  // region = rows below the header until a gap, a bigger-font heading, or the next table header
+  const region=[]; let j=i+run.length, prev=run[run.length-1];
+  for(;j<rows.length;j++){
+    const r=rows[j], rh=Math.max(...r.cells.map(c=>c.h),0);
+    const nextRuns=impHeaderRuns(rows,j), nextRun=nextRuns[nextRuns.length-1]||[], nh=nextRun.length?impMergeHeader(nextRun):null, nextHdr=nh&&impHeaderInfo(nh);
+    if(nextHdr){ if(nh.map(h=>h.text.toLowerCase()).join('|')===labels){ j+=nextRun.length-1; prev=nextRun[nextRun.length-1]; continue; } break; }   // header repeated on a new page / a different table
+    if(r.page===prev.page&&prev.y-r.y>45) break;
+    if(hRef&&rh>hRef*1.08) break;
+    if(r.cells.length===1&&/^\s*(\d+(\.\d+)*[.)]?\s|api\s*#?\d|request|response|table\b|section\b)/i.test(r.cells[0].text)&&r.cells[0].x<=hdr[0].x+4+(hdr[0].cx-hdr[0].x)) break;
+    region.push(r); prev=r;
+  }
+  const colOf=impColumns(hdr,info.roles,region), tbl={kind:info.kind,heading:ctx.slice(-3).join(' '),rec:[]};
+  const roleAt=k=>info.roles[k]||'';
+  // cells are often vertically centred, so a record's wrapped lines can sit ABOVE its anchor row (the one with the method / name):
+  // every other row joins the nearest anchor row on its page
+  const parsed=region.map(r=>{
+    const byRole={}; r.cells.forEach(c=>{ const role=roleAt(colOf(c.x)); if(role) byRole[role]=(byRole[role]?byRole[role]+(role==='endpoint'?'':' '):'')+c.text; });
+    const start=tbl.kind==='ops'?/^(GET|POST|PUT|PATCH|DELETE)$/i.test((byRole.method||'').trim()):!!(byRole.name||'').trim();
+    return {r,byRole,start};
+  });
+  const anchors=parsed.filter(p=>p.start);
+  if(!anchors.length) return null;
+  const groups=anchors.map(a=>[a]);
+  parsed.filter(p=>!p.start).forEach(p=>{
+    const same=anchors.filter(a=>a.r.page===p.r.page), pool=same.length?same:anchors;
+    const best=pool.reduce((m,a)=>Math.abs(a.r.y-p.r.y)<Math.abs(m.r.y-p.r.y)?a:m,pool[0]);
+    groups[anchors.indexOf(best)].push(p);
+  });
+  groups.forEach(g=>{
+    const rec={};
+    g.sort((x,y)=>x.r.page-y.r.page||y.r.y-x.r.y).forEach(p=>Object.entries(p.byRole).forEach(([role,t])=>{
+      rec[role]=(rec[role]?rec[role]+(role==='endpoint'?'':' '):'')+t;
+    }));
+    tbl.rec.push(rec);
+  });
+  return {tbl,next:j};
 }
 
 /* ---- parameter rows -> a JSON example ---- */
@@ -162,13 +176,47 @@ function impParamsToJson(tbl){
 }
 
 /* ---- tables -> operations ---- */
+/* vertical layout: one small table per API, label in the first column and its value beside it
+     Endpoint | https://…      Method | POST      Header | …      Source | …      Destination Operation | …      Request | {…}      Response | {…} */
+function impFromKeyValue(rows){
+  const KV=/^(end\s*-?point(\s*url)?|url|uri|(http\s*)?method|verb|headers?|source|destination(\s*(operation|service))?|operation|request(\s*(body|data|payload|sample))?|response(\s*(body|data|payload|sample))?)$/i;
+  const keyOf=l=>{ l=l.toLowerCase(); return /end|url|uri/.test(l)?'endpoint':/method|verb/.test(l)?'method':/header/.test(l)?'header':/source/.test(l)?'source':/destination/.test(l)?'destination':/operation/.test(l)?'operation':/request/.test(l)?'request':'response'; };
+  const clean=t=>t.replace(/[:\uff1a]\s*$/,'').trim();
+  // the value column starts where the first "label | value" row puts its second cell
+  let valX=null;
+  for(const r of rows){ if(r.cells.length>=2&&KV.test(clean(r.cells[0].text))){ valX=r.cells[1].x; break; } }
+  if(valX===null) return [];
+  const entries=[]; let active=null;
+  for(const r of rows){
+    const left=r.cells.filter(c=>c.x<valX-4), right=r.cells.filter(c=>c.x>=valX-4), lt=clean(left.map(c=>c.text).join(' '));
+    if(left.length){
+      const wrapped=active&&!right.length&&r.page===active.page&&active.yEnd-r.y<=16&&KV.test(clean(active.label+' '+lt));   // label wrapped over two lines ("Destination" / "Operation")
+      if(wrapped){ active.label=clean(active.label+' '+lt); active.yEnd=r.y; continue; }
+      active=KV.test(lt)?{label:lt,page:r.page,yEnd:r.y,vals:[]}:null;   // other text ends the block
+      if(active) entries.push(active);
+    }
+    if(right.length&&active&&r.page===active.page&&active.yEnd-r.y<=40){ active.vals.push({y:r.y,text:right.map(c=>c.text).join(' ')}); active.yEnd=Math.min(active.yEnd,r.y); }
+  }
+  const ops=[]; let cur=null;
+  for(const e of entries){
+    const key=keyOf(e.label);
+    if(!cur||key in cur){ cur={}; ops.push(cur); }   // a repeated label starts the next API
+    cur[key]=e.vals.sort((x,y)=>y.y-x.y).map(v=>v.text).join(key==='endpoint'?'':' ').trim();
+  }
+  const json=t=>{ if(!t) return undefined; const b=impBalanced(t); return b?impParseLoose(b):undefined; };
+  return ops.filter(o=>o.endpoint&&/^(GET|POST|PUT|PATCH|DELETE)$/i.test((o.method||'').trim())).map(o=>({
+    method:o.method.trim().toUpperCase(),url:o.endpoint.replace(/\s+/g,''),summary:o.operation||o.destination||'',req:json(o.request),res:json(o.response),
+    meta:{headers:o.header||'',source:o.source||'',destination:o.destination||''}}));
+}
+
 function impFromTables(rows){
-  const tables=impReadTables(rows), ops=[];
+  const tables=impReadTables(rows); let ops=[];
   tables.filter(t=>t.kind==='ops').forEach(t=>t.rec.forEach(r=>{
     const url=(r.endpoint||'').replace(/\s+/g,''); if(!url||!r.method) return;
     ops.push({method:r.method.toUpperCase(),url,summary:r.operation||r.destination||'',req:undefined,res:undefined,
       meta:{headers:r.header||'',source:r.source||'',destination:r.destination||''}});
   }));
+  if(!ops.length) ops=impFromKeyValue(rows);
   if(!ops.length) return {ops:[],note:''};
   const hasBody=o=>['POST','PUT','PATCH'].includes(o.method);
   let unk=0, matched=0, guessed=0;

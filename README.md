@@ -35,6 +35,9 @@ If a URL fails with a certificate error, see [Troubleshooting](#troubleshooting)
 pages work:
 - an *operations table* — columns **Endpoint, Method** plus any of **Header, Source, Destination, Operation** — gives the
   endpoint list (header/source/destination show under each endpoint);
+- the same details laid out **vertically** — one small table per API with the label in the left column and the value beside
+  it (`Endpoint | https://…`, `Method | POST`, `Header | …`, `Source | …`, `Destination Operation | …`, optionally `Request` /
+  `Response` rows holding JSON);
 - *request-parameter* and *response* tables — columns **Name/Parameter/Field**, **Type**, **Required**, **Sample/Example**,
   **Description** — are turned into JSON bodies (`address.city` becomes a nested object, `items[0].id` an array). A table is
   matched to its endpoint by its heading (`API 2`, the operation name or the last path segment); otherwise by document
@@ -158,6 +161,8 @@ Restart the server after any of these.
 - *"Server not reachable" / history not saving* — open the app through `npm start` (http://localhost:3000), not the HTML file.
 - *AI mode says no LLM configured* — add a key to `.env` (e.g. `GEMINI_API_KEY`) and restart.
 - *PDF says no endpoints found* — the PDF must contain selectable text (not scanned images) in one of the layouts above.
+  The message includes a **What was read from the PDF** panel listing every text line with its column position; if a
+  layout still isn't recognised, copy that panel's text — it shows exactly what the reader saw.
 - *Page looks stale after an update* — hard-refresh with Ctrl+F5.
 
 ## Structure

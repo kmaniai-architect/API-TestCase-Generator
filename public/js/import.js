@@ -236,6 +236,15 @@ function impLoadPdfJs(){
   return new Promise((ok,no)=>{ const s=document.createElement('script'); s.src=PDFJS+'pdf.min.js'; s.onload=()=>{ pdfjsLib.GlobalWorkerOptions.workerSrc=PDFJS+'pdf.worker.min.js'; ok(); };
     s.onerror=()=>no(new Error('Could not load the PDF reader (needs internet access to cdnjs.cloudflare.com)')); document.head.appendChild(s); });
 }
+/* nothing recognised: say why, and show exactly what was read so the layout can be diagnosed */
+function impNoOps(rows){
+  const dump=rows.slice(0,80).map(r=>`p${r.page} │ `+r.cells.map(c=>`${c.text} [x${Math.round(c.x)}]`).join(' │ ')).join('\n');
+  $('impMsg').className='hint err';
+  $('impMsg').innerHTML=rows.length
+    ?`✗ No endpoints found. The reader looks for a table with <b>Endpoint</b> and <b>Method</b> columns (or Endpoint / Method / Header / Source / Destination labels down the left), or lines like <code>POST /v1/users</code>.
+       <details style="margin-top:6px"><summary>What was read from the PDF (first ${Math.min(rows.length,80)} lines) — send this if it still fails</summary><pre style="max-height:220px;overflow:auto;white-space:pre-wrap">${esc(dump)}</pre></details>`
+    :'✗ This PDF has no selectable text — it looks like scanned images, which cannot be read.';
+}
 $('impFile').onchange=async e=>{
   const f=e.target.files[0]; if(!f) return;
   impFileName=f.name;
@@ -258,7 +267,7 @@ $('impFile').onchange=async e=>{
       text+=c.items.map(it=>it.str+(it.hasEOL?'\n':' ')).join('')+'\n';
     }
     const t=impFromText(text);
-    if(!t.ops.length) throw new Error('No operations like "POST /v1/users" were found. Scanned PDFs (images) can\'t be read.');
+    if(!t.ops.length){ impNoOps(__rows); e.target.value=''; return; }
     impMsg(`✓ ${pdf.numPages} page${pdf.numPages>1?'s':''} read — found ${t.ops.length} operation${t.ops.length>1?'s':''}. Click one to fill the form.`,'ok'); impShow(t.ops,t.base);
   }catch(err){ impMsg('✗ '+esc(err.message),'err'); }
   e.target.value='';
