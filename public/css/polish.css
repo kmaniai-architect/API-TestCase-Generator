@@ -60,3 +60,26 @@ tr.tc:hover td:first-child{box-shadow:inset 3px 0 var(--brand)}
 
 /* layering: dialogs above the sticky sidebar, toast above dialogs */
 .modal{z-index:50}.toast{z-index:60}
+
+/* PDF upload / verification checklist */
+.vsteps{list-style:none;margin:10px 0 4px;padding:0;display:grid;gap:6px}
+.vsteps li{display:flex;gap:10px;align-items:flex-start;padding:8px 10px;border:1px solid var(--line);border-radius:10px;background:var(--card);transition:border-color .2s,background .2s}
+.vsteps i{flex:none;width:20px;height:20px;border-radius:50%;border:2px solid var(--line);display:grid;place-items:center;font-size:11px;font-style:normal;color:#fff;margin-top:1px}
+.vsteps b{font-size:13px}.vsteps small{display:block;color:var(--mute);font-size:12px;margin-top:1px}
+.vsteps li.pend{opacity:.5}
+.vsteps li.run i{border-color:var(--brand);border-top-color:transparent;animation:spin .7s linear infinite}
+.vsteps li.ok{border-color:color-mix(in srgb,var(--ok) 45%,var(--line))}.vsteps li.ok i{background:var(--ok);border-color:var(--ok)}.vsteps li.ok i::after{content:"✓"}
+.vsteps li.warn{border-color:var(--warn);background:rgba(245,158,11,.07)}.vsteps li.warn i{background:var(--warn);border-color:var(--warn)}.vsteps li.warn i::after{content:"!"}
+.vsteps li.fail{border-color:var(--bad);background:rgba(239,68,68,.07)}.vsteps li.fail i{background:var(--bad);border-color:var(--bad)}.vsteps li.fail i::after{content:"✗"}
+.vsteps li.fail small{color:var(--bad)}
+.vsteps[hidden]{display:none}
+.gap{color:var(--warn)!important}
+
+/* endpoint details (clean tables per endpoint) */
+.impdetbtn{display:block;padding:2px 0!important;margin-top:2px;font-size:12px}
+.imptable tr.impdet td{background:var(--bg)}
+.dgrid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px;padding:6px 0}
+.dt h5{margin:0 0 4px;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--mute)}
+.dt table{width:100%;min-width:0;border-collapse:collapse;font-size:12px;background:var(--card);border:1px solid var(--line)}
+.dt th,.dt td{padding:4px 8px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top;position:static;word-break:break-word}
+.dt.iss ul{margin:0;padding-left:18px;color:var(--warn);font-size:12px}

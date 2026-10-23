@@ -14,6 +14,14 @@ try {
   }
 } catch { /* no .env file */ }
 
+// Behind a corporate proxy? Node's fetch ignores HTTP(S)_PROXY unless NODE_USE_ENV_PROXY=1 is set before start-up
+// (Node 24+/22.21+), so when a proxy is configured (environment or .env) restart ourselves once with it enabled.
+if (!process.env.NODE_USE_ENV_PROXY && !process.env.TC_CHILD && ['HTTPS_PROXY', 'https_proxy', 'HTTP_PROXY', 'http_proxy'].some(k => process.env[k])) {
+  const r = require('child_process').spawnSync(process.execPath, [...process.execArgv, __filename, ...process.argv.slice(2)],
+    { stdio: 'inherit', env: { ...process.env, NODE_USE_ENV_PROXY: '1', TC_CHILD: '1' } });
+  process.exit(r.status ?? 1);
+}
+
 // Trust the operating system's certificate store as well (corporate proxies / antivirus that re-sign HTTPS
 // install their root CA there). Needs Node 22.19+/24.5+; older versions can use NODE_EXTRA_CA_CERTS or --use-system-ca.
 try {
@@ -87,41 +95,82 @@ const buildPrompt = ({ method, endpoint, headers, request, response, notes }) =>
 ].filter(Boolean).join('\n\n');
 
 /* ---------- provider calls (plain fetch) ---------- */
+const reachable = {};   // host -> last time a quick connectivity check succeeded
+async function preflight(url) {
+  const u = new URL(url);
+  if (Date.now() - (reachable[u.host] || 0) < 60000) return;
+  try { await fetch(u.origin, { method: 'HEAD', signal: AbortSignal.timeout(10000) }); reachable[u.host] = Date.now(); }   // any HTTP answer = reachable
+  catch (e) {
+    const code = e.cause?.code || e.name;
+    if (/CERT|SELF_SIGNED|ISSUER|UNABLE_TO_VERIFY|SIGNATURE/i.test(code)) return;   // reported with advice by the real call below
+    throw new Error(`Cannot connect to ${u.host} (${/Timeout|ETIMEDOUT/i.test(code) ? 'no answer within 10 s' : code}). Your network is blocking or not routing it — check the internet connection, firewall, VPN or proxy. ` +
+      'Behind a proxy, set HTTPS_PROXY=http://host:port in .env and restart. Test from PowerShell: Invoke-WebRequest https://' + u.host + ' -UseBasicParsing');
+  }
+}
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+// "high demand" (503), rate limits (429) and 5xx blips are usually temporary: retry a few times with a growing pause
 async function post(url, headers, body) {
+  const delays = [2000, 5000, 12000, 25000, 45000];   // ~90 s of patience for "high demand" spikes
+  for (let i = 0; ; i++) {
+    try { return await postOnce(url, headers, body); }
+    catch (e) {
+      if (!e.retryable) throw e;
+      if (i >= delays.length) { e.message += ` (tried ${i + 1} times)`; throw e; }
+      console.log(`${e.message.slice(0, 120)} — retrying in ${Math.round((e.retryAfter || delays[i]) / 1000)}s (${i + 1}/${delays.length})`);
+      await sleep(Math.min(e.retryAfter || delays[i], 30000));
+    }
+  }
+}
+async function postOnce(url, headers, body) {
+  const host = new URL(url).host;
+  await preflight(url);
   let r;
   try {
     r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', ...headers }, body: JSON.stringify(body), signal: AbortSignal.timeout(240000) });
-  } catch (e) { throw new Error(`Could not reach ${new URL(url).host}: ${e.message}`); }
+  } catch (e) {
+    const code = e.cause?.code || e.message;
+    throw new Error(`Could not reach ${host}: ${/timeout/i.test(code) ? 'no response after 4 minutes (the provider is very slow, or a proxy/firewall is holding the connection)' : code}` + (/CERT|SELF_SIGNED|ISSUER|UNABLE_TO_VERIFY|SIGNATURE/i.test(code) ? ' — HTTPS certificate not trusted (proxy/antivirus re-signing HTTPS); see Troubleshooting in the README.' : ''));
+  }
   const text = await r.text();
   let data; try { data = JSON.parse(text); } catch { data = null; }
-  if (!r.ok) throw Object.assign(new Error(data?.error?.message || data?.error || data?.message || `Provider returned HTTP ${r.status}`), { status: r.status === 401 || r.status === 403 ? 401 : 502 });
+  if (!r.ok) {
+    // surface what the provider actually said (a bare "HTTP 403" tells you nothing)
+    const detail = String(data?.error?.message || (typeof data?.error === 'string' ? data.error : '') || data?.message || text.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()).slice(0, 300);
+    const hint = r.status === 401 || r.status === 403
+      ? ' — the key was rejected or is not allowed to do this. Check: the key in .env is complete (no quotes/spaces) and belongs to this provider; it is enabled for the API (Gemini: the "Generative Language API" on the key\'s project, with no IP/app restriction); billing/quota is active; your country/region is supported; and a VPN or corporate proxy is not blocking the request.'
+      : r.status === 429 ? ' — rate limit or quota reached; wait a bit or check the provider\'s quota/billing.'
+      : r.status === 404 ? ' — model not found: check the *_MODEL value in .env.' : '';
+    throw Object.assign(new Error(`${host} returned HTTP ${r.status}${detail ? ': ' + detail : ''}${hint}`), {
+      status: r.status === 401 || r.status === 403 ? 401 : 502,
+      retryable: [429, 500, 502, 503, 504].includes(r.status), retryAfter: (parseFloat(r.headers.get('retry-after')) || 0) * 1000 });
+  }
   return data;
 }
 
 const CALLS = {
-  async anthropic({ key, model, prompt }) {
+  async anthropic({ key, model, prompt, system = SYSTEM, schema = JSON_SCHEMA, tool = 'submit_test_cases' }) {
     const d = await post('https://api.anthropic.com/v1/messages', { 'x-api-key': key, 'anthropic-version': '2023-06-01' }, {
-      model, max_tokens: 12000, system: SYSTEM,
-      tools: [{ name: 'submit_test_cases', description: 'Submit the complete list of API test cases.', input_schema: JSON_SCHEMA }],
-      tool_choice: { type: 'tool', name: 'submit_test_cases' },
+      model, max_tokens: 12000, system,
+      tools: [{ name: tool, description: 'Submit the structured result.', input_schema: schema }],
+      tool_choice: { type: 'tool', name: tool },
       messages: [{ role: 'user', content: prompt }],
     });
     return d.content?.find(b => b.type === 'tool_use')?.input;
   },
-  async gemini({ key, model, prompt }) {
+  async gemini({ key, model, prompt, system = SYSTEM, schema = JSON_SCHEMA }) {
     const d = await post(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, { 'x-goog-api-key': key }, {
-      systemInstruction: { parts: [{ text: SYSTEM }] },
+      systemInstruction: { parts: [{ text: system }] },
       contents: [{ role: 'user', parts: [{ text: prompt }] }],
-      generationConfig: { responseMimeType: 'application/json', responseSchema: toGemini(JSON_SCHEMA), maxOutputTokens: 16000, temperature: 0.4 },
+      generationConfig: { responseMimeType: 'application/json', responseSchema: toGemini(schema), maxOutputTokens: 16000, temperature: 0.4 },
     });
     const text = d.candidates?.[0]?.content?.parts?.map(p => p.text || '').join('') || '';
     if (!text) throw new Error(d.promptFeedback?.blockReason ? `Blocked by Gemini: ${d.promptFeedback.blockReason}` : 'Gemini returned no content');
     return parseJson(text);
   },
-  async openai({ key, model, prompt, base }) {
+  async openai({ key, model, prompt, base, system = SYSTEM }) {
     const d = await post(`${base.replace(/\/$/, '')}/chat/completions`, key ? { Authorization: `Bearer ${key}` } : {}, {
       model, temperature: 0.4, response_format: { type: 'json_object' },
-      messages: [{ role: 'system', content: SYSTEM }, { role: 'user', content: prompt }],
+      messages: [{ role: 'system', content: system }, { role: 'user', content: prompt }],
     });
     return parseJson(d.choices?.[0]?.message?.content || '');
   },
@@ -136,13 +185,36 @@ function parseJson(text) {
   throw new Error('The model did not return valid JSON (it may have been cut off). Try again or pick another model.');
 }
 
-async function generate(body, headerKey) {
+// provider/model selection, key check and the optional fallback model — shared by test-case generation and PDF reading
+async function runLLM(body, headerKey, extra = {}) {
   const provider = PROVIDERS[body.provider] ? body.provider : defaultProvider();
+  try { return await runProvider(provider, body, headerKey, extra); }
+  catch (e) {
+    // still overloaded after the retries (and the optional model fallback): try another configured provider, e.g. LLM_FALLBACK_PROVIDER=openai
+    const alt = env('LLM_FALLBACK_PROVIDER').toLowerCase();
+    if (e.retryable && PROVIDERS[alt] && alt !== provider && configured(alt)) {
+      console.log(`${PROVIDERS[provider].label} unavailable — trying ${PROVIDERS[alt].label}`);
+      return runProvider(alt, { ...body, model: '' }, '', extra);
+    }
+    throw e;
+  }
+}
+async function runProvider(provider, body, headerKey, extra) {
   const P = PROVIDERS[provider];
   const key = keyOf(provider) || (headerKey || '').trim();
   if (!key && !P.noKey) throw Object.assign(new Error(`No API key for ${P.label}: set ${P.keys[0]} in .env or enter a key in the page.`), { status: 400 });
   const model = (body.model || '').trim() || modelOf(provider);
-  const out = await CALLS[P.kind]({ key, model, base: baseOf(provider), prompt: buildPrompt(body) });
+  const call = m => CALLS[P.kind]({ key, model: m, base: baseOf(provider), ...extra });
+  // optional second model (e.g. GEMINI_FALLBACK_MODEL) used when the main one stays overloaded after the retries
+  const fallback = env(P.modelEnv.replace(/_MODEL$/, '') + '_FALLBACK_MODEL');
+  let out, usedModel = model;
+  try { out = await call(model); }
+  catch (e) { if (e.retryable && fallback && fallback !== model) { console.log(`${model} unavailable — trying ${fallback}`); usedModel = fallback; out = await call(fallback); } else throw e; }
+  return { out, P, usedModel };
+}
+
+async function generate(body, headerKey) {
+  const { out, P, usedModel } = await runLLM(body, headerKey, { prompt: buildPrompt(body) });
   const cases = Array.isArray(out?.cases) ? out.cases : Array.isArray(out) ? out : null;
   if (!cases || !cases.length) throw new Error(`${P.label} returned no test cases.`);
   const pick = (v, allowed, d) => (allowed.includes(v) ? v : d);
@@ -150,7 +222,7 @@ async function generate(body, headerKey) {
     category: String(c.category || 'General'),
     title: String(c.title || 'Untitled'),
     type: pick(c.type, ['Positive', 'Negative'], 'Negative'),
-    source: 'AI', llm: `${P.label} · ${model}`,
+    source: 'AI', llm: `${P.label} · ${usedModel}`,
     method: body.method, endpoint: body.endpoint,
     request: typeof c.request === 'string' ? c.request : JSON.stringify(c.request ?? '—', null, 2),
     status: String(c.status || ''),
@@ -215,6 +287,7 @@ function saveSuite(s) {
       str(c.method), str(c.endpoint), str(c.request), str(c.status), str(c.expected), str(c.priority), json(c.steps), results[c.id] || null, str(c.llm)));
   });
 }
+const rag = require('./rag')({ db, runLLM, parseJson });   // PDF reading with retrieval + learned examples
 const deleteSuite = id => q.del.run(id);
 const clearSuites = () => db.exec('DELETE FROM suites');
 
@@ -288,6 +361,16 @@ http.createServer(async (req, res) => {
       let body; try { body = JSON.parse(raw); } catch { return send(res, 400, { error: 'Invalid JSON body' }); }
       if (!body.method || !body.endpoint) return send(res, 400, { error: 'method and endpoint are required' });
       return send(res, 200, { cases: await generate(body, req.headers['x-api-key']) });
+    }
+    if (req.url.startsWith('/api/pdf/')) {
+      if (req.method === 'GET' && req.url === '/api/pdf/stats') return send(res, 200, rag.stats());
+      if (req.method === 'DELETE' && req.url === '/api/pdf/learned') { rag.clear(); return send(res, 200, rag.stats()); }
+      if (req.method === 'POST' && (req.url === '/api/pdf/extract' || req.url === '/api/pdf/learn')) {
+        let raw = '';
+        for await (const chunk of req) { raw += chunk; if (raw.length > 4e6) return send(res, 413, { error: 'Payload too large' }); }
+        let body; try { body = JSON.parse(raw); } catch { return send(res, 400, { error: 'Invalid JSON body' }); }
+        return send(res, 200, req.url === '/api/pdf/learn' ? rag.learn(body) : await rag.extract(body, req.headers['x-api-key']));
+      }
     }
     if (req.method === 'POST' && req.url === '/api/fetch-url') {
       let raw = '';

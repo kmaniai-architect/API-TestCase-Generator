@@ -80,6 +80,8 @@ $('gen').onclick=async()=>{
   cases=base.concat(ai.filter(x=>!seen.has(x.title.toLowerCase()))).map((x,i)=>({...x,id:'TC'+String(i+1).padStart(3,'0')}));
   openIds.clear(); results={}; allOpen=false; catFilter='';
   const fromImport=impSrc&&impSrc.method===method&&impStillMatches(impSrc.endpoint,endpoint);   // still the imported values, not edited by hand
+  // the user generated tests from this endpoint: the final values are the "correct answer" for the PDF passage it came from -> learn it
+  if(fromImport&&impSrc.type==='pdf'&&impSrc.chunk) impLearn([{chunk:impSrc.chunk,op:{method,url:endpoint,request:req,response:res}}],'confirmed',impSrc.name);
   currentHistoryId=null;   // new suite: not in the history until the user saves it
   pendingSuite={method,endpoint,mode,req,res,notes:$('notes').value.trim(),cases,input:fromImport?{type:impSrc.type,name:impSrc.name}:{type:'manual'}};
   renderHistory(); updateSaveBtn();

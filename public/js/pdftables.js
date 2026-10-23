@@ -209,14 +209,16 @@ function impFromKeyValue(rows){
     meta:{headers:o.header||'',source:o.source||'',destination:o.destination||''}}));
 }
 
-function impFromTables(rows){
+function impFromTables(rows,skipSections){
+  const sec=skipSections?{ops:[]}:impFromSections(rows); if(sec.ops.length) return {ops:sec.ops,note:sec.note,layout:'sections'};   // "API-01 …" sections win
   const tables=impReadTables(rows); let ops=[];
   tables.filter(t=>t.kind==='ops').forEach(t=>t.rec.forEach(r=>{
     const url=(r.endpoint||'').replace(/\s+/g,''); if(!url||!r.method) return;
     ops.push({method:r.method.toUpperCase(),url,summary:r.operation||r.destination||'',req:undefined,res:undefined,
       meta:{headers:r.header||'',source:r.source||'',destination:r.destination||''}});
   }));
-  if(!ops.length) ops=impFromKeyValue(rows);
+  let layout='table';
+  if(!ops.length){ ops=impFromKeyValue(rows); layout='key-value'; }
   if(!ops.length) return {ops:[],note:''};
   const hasBody=o=>['POST','PUT','PATCH'].includes(o.method);
   let unk=0, matched=0, guessed=0;
@@ -234,7 +236,7 @@ function impFromTables(rows){
     if(op&&op[kind]===undefined) op[kind]=json;
   });
   const note=guessed?` ${guessed} parameter/response table${guessed>1?'s were':' was'} matched to endpoints by order — please check.`:'';
-  return {ops,note};
+  return {ops,note,layout};
 }
 
 /* request/response samples given as plain JSON blocks (not in a table): fill whatever is still missing, in document order,
