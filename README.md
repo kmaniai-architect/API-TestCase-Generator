@@ -7,6 +7,8 @@ with offline rules or an LLM, tick the cases you want, and export them as **CSV*
 
 ## Look & feel
 
+The whole app uses **one palette built on `#086288`**: the header and the History-sidebar footer are `#086288` with white text; buttons, tabs, chips, links, focus rings and the mode bar are its lighter / deeper shades; dark mode uses the same blue on deep blue-teal surfaces. Everything derives from the CSS variables at the top of `public/css/styles.css` (`--brand`, `--btn`, `--hdr`, `--bg`, `--card` …). Only the HTTP-method colours and the Pass / Fail / warning colours keep their own hues, because they carry meaning. The Input Mode tabs (Manually / PDF / Swagger) and the Manual / AI bar are told apart by **shade** of the same blue and by the dot on each tab.
+
 A ☀️/🌙 switch in the top-right corner toggles **dark mode**. It follows your OS setting until you pick one, and then
 remembers your choice. Buttons have a ripple, cards/stats/history items lift on hover, dialogs fade and spring in, and
 keyboard focus is clearly outlined.
@@ -30,6 +32,10 @@ response body), which you can still edit before generating.
 | 🔗 **Swagger / URL Based** | Paste an OpenAPI/Swagger **JSON** URL to list all its operations (example bodies are taken from the spec or built from its schemas), or paste an endpoint that returns JSON to use that response as the expected response. YAML specs are not supported yet. |
 
 If a URL fails with a certificate error, see [Troubleshooting](#troubleshooting).
+
+The Input Mode tabs (Manually / PDF / Swagger) and the Manual / AI bar are told apart by **shade** of the same blue (mid, lighter, deeper) and by the dot on each tab.
+
+Each tab has its own **shade** of the app blue, shown as a dot on every tab and as the tint and border of the whole Input Mode box while that tab is active.
 
 Each tab keeps its **own** form values, import results and generated test cases: switching from Manually to PDF to Swagger
 shows a clean tab each time, and switching back restores exactly what you had there (until you reload the page).
@@ -66,7 +72,14 @@ missing (request body / response sample) — and an LLM is configured in `.env`,
 4. the LLM returns each API as **normalised tables** (headers, request fields, response fields, status codes, notes — never inventing
    endpoints or fields); the **server builds the request/response JSON from those tables** (names validated, types → sample values,
    enums, nesting) and scrutinises it; the result is the primary one and the built-in readers only fill what it left out.
-When nothing is found the AI runs automatically; when only details are missing a **✨ Fill the gaps with AI** button appears
+**Stop button.** Every LLM wait can be cancelled: **⏹ Stop** appears next to the AI progress while it reads a PDF (the built-in result stays,
+with a **↻ Try the AI again** button) and on the progress card while test cases are generated in AI mode. Stopping also cancels the
+request to the provider on the server (including its retries/waiting), so nothing keeps running in the background.
+
+**AI-assisted reading is a switch above the file picker, OFF by default** (the AI call can take a while when the provider is slow). Off: only
+the built-in readers run — fast, no LLM call — and for a messy PDF a **✨ Use AI for this PDF** button lets you run the AI for that one
+file. On: messy or incomplete PDFs go to the AI automatically. The setting is remembered.
+With the switch on, when nothing is found the AI runs automatically; when only details are missing a **✨ Fill the gaps with AI** button appears
 (so you decide whether to spend a call). Learned examples are kept only in your local `testcase.db` (table `pdf_examples`) and
 sent to your LLM provider only as the few-shot examples of an AI-assisted read; a **forget** link under the checklist clears them.
 This is retrieval-based learning, not model training: the model itself is never changed.
@@ -132,6 +145,14 @@ Invalid headers block **Generate** while the switch is on.
   remove one; **All** clears the choice). **☑ Select shown** (or the header checkbox) ticks everything currently shown, so
   "only Functional + Boundary" is: pick the two chips → Select shown → CSV / Postman. Ticks are kept while you change filters.
 - A **checkbox column** (with select-all for the rows currently shown) chooses which cases to export.
+
+## Test step format: Standard or Gherkin
+
+The **Steps** selector in the results toolbar switches every case between **Standard** numbered steps and **Gherkin**
+(`@tags`, `Scenario:`, `Given the API endpoint … is reachable`, `And the request headers are` / `the request body is`,
+`When I send a POST request to …`, `Then the response status should be …`, `And the response should be correct: …`). The choice is
+remembered and also controls the *Test Steps* column of the CSV, the `stepsText` field of the JSON and the Postman request
+description. **⬇ Gherkin** downloads the ticked cases as a `.feature` file (one *Feature* per method + path).
 
 ## Exports (act on the ticked cases)
 

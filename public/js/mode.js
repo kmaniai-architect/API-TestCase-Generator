@@ -10,7 +10,7 @@ const llmName=()=>{ const p=curProvider(); return p.label?p.label.replace(/ \(.*
 function setMode(m){
   mode=m;
   document.querySelectorAll('#modeSeg button').forEach(b=>b.classList.toggle('on',b.dataset.mode===m));
-  $('modeSeg').classList.toggle('ai',m==='ai');
+  $('modeSeg').classList.toggle('ai',m==='ai'); document.querySelector('.modebar').dataset.m=m;   // drives the Manual / AI colour palettes
   $('aiOptions').hidden=m!=='ai';
   refreshAI();
   try{ localStorage.setItem('tcMode',m); }catch{}

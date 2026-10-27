@@ -170,7 +170,7 @@ $('pmGo').onclick=()=>{
     const raw=hasBody?(typeof x.request==='string'?x.request:JSON.stringify(x.request,null,2)):'';
     const code=parseInt(x.status,10);
     const req={method:x.method,header:header.map(h=>({...h})),url:pmUrl(x.endpoint),
-      description:`${x.type} · ${x.priority} priority · ${x.source}\n\nExpected: ${x.status} — ${x.expected}`};
+      description:`${x.type} · ${x.priority} priority · ${x.source}\n\nExpected: ${x.status} — ${x.expected}\n\nSteps (${stepFmt==='gherkin'?'Gherkin':'Standard'}):\n${stepsText(x)}`};
     if(hasBody) req.body={mode:'raw',raw,options:{raw:{language:'json'}}};
     const item={name:`${x.id} - ${x.title}`,request:req};
     if(code) item.event=[{listen:'test',script:{type:'text/javascript',exec:[

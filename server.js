@@ -3,6 +3,11 @@
 //   POST /api/generate -> asks the chosen provider (Claude, Gemini, OpenAI, Groq, …) for test cases
 // API keys stay on the server — they are never sent to the browser.
 const http = require('http');
+const { AsyncLocalStorage } = require('async_hooks');
+// the browser's Stop button closes its request: the in-flight LLM call (and its retries) is cancelled through this signal
+const als = new AsyncLocalStorage();
+const stopSignal = () => als.getStore()?.signal;
+const withStop = (...sigs) => { const s = sigs.filter(Boolean); return s.length > 1 ? AbortSignal.any(s) : s[0]; };
 const fs = require('fs');
 const path = require('path');
 
@@ -99,7 +104,7 @@ const reachable = {};   // host -> last time a quick connectivity check succeede
 async function preflight(url) {
   const u = new URL(url);
   if (Date.now() - (reachable[u.host] || 0) < 60000) return;
-  try { await fetch(u.origin, { method: 'HEAD', signal: AbortSignal.timeout(10000) }); reachable[u.host] = Date.now(); }   // any HTTP answer = reachable
+  try { await fetch(u.origin, { method: 'HEAD', signal: withStop(AbortSignal.timeout(10000), stopSignal()) }); reachable[u.host] = Date.now(); }   // any HTTP answer = reachable
   catch (e) {
     const code = e.cause?.code || e.name;
     if (/CERT|SELF_SIGNED|ISSUER|UNABLE_TO_VERIFY|SIGNATURE/i.test(code)) return;   // reported with advice by the real call below
@@ -107,7 +112,10 @@ async function preflight(url) {
       'Behind a proxy, set HTTPS_PROXY=http://host:port in .env and restart. Test from PowerShell: Invoke-WebRequest https://' + u.host + ' -UseBasicParsing');
   }
 }
-const sleep = ms => new Promise(r => setTimeout(r, ms));
+const sleep = ms => new Promise((resolve, reject) => {   // a pause that the Stop button can cut short
+  const sig = stopSignal(); if (sig?.aborted) return reject(new Error('Stopped'));
+  const t = setTimeout(resolve, ms); sig?.addEventListener('abort', () => { clearTimeout(t); reject(new Error('Stopped')); }, { once: true });
+});
 // "high demand" (503), rate limits (429) and 5xx blips are usually temporary: retry a few times with a growing pause
 async function post(url, headers, body) {
   const delays = [2000, 5000, 12000, 25000, 45000];   // ~90 s of patience for "high demand" spikes
@@ -126,7 +134,7 @@ async function postOnce(url, headers, body) {
   await preflight(url);
   let r;
   try {
-    r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', ...headers }, body: JSON.stringify(body), signal: AbortSignal.timeout(240000) });
+    r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', ...headers }, body: JSON.stringify(body), signal: withStop(AbortSignal.timeout(240000), stopSignal()) });
   } catch (e) {
     const code = e.cause?.code || e.message;
     throw new Error(`Could not reach ${host}: ${/timeout/i.test(code) ? 'no response after 4 minutes (the provider is very slow, or a proxy/firewall is holding the connection)' : code}` + (/CERT|SELF_SIGNED|ISSUER|UNABLE_TO_VERIFY|SIGNATURE/i.test(code) ? ' — HTTPS certificate not trusted (proxy/antivirus re-signing HTTPS); see Troubleshooting in the README.' : ''));
@@ -334,6 +342,13 @@ function fetchInsecure(u, hops = 0) {
 const MIME = { '.html': 'text/html', '.css': 'text/css', '.js': 'text/javascript', '.json': 'application/json', '.svg': 'image/svg+xml', '.ico': 'image/x-icon' };
 const send = (res, code, body, type = 'application/json') => { res.writeHead(code, { 'Content-Type': type }); res.end(typeof body === 'string' || Buffer.isBuffer(body) ? body : JSON.stringify(body)); };
 
+// run an LLM job so that it is cancelled when the browser gives up on the request (Stop button / closed tab)
+const cancellable = (req, res, job) => {
+  const ac = new AbortController();
+  res.on('close', () => { if (!res.writableFinished) { ac.abort(); console.log('LLM request stopped by the user'); } });
+  return als.run({ signal: ac.signal }, job);
+};
+
 http.createServer(async (req, res) => {
   try {
     if (req.method === 'GET' && req.url === '/api/status') {
@@ -360,7 +375,7 @@ http.createServer(async (req, res) => {
       for await (const chunk of req) { raw += chunk; if (raw.length > 2e6) return send(res, 413, { error: 'Payload too large' }); }
       let body; try { body = JSON.parse(raw); } catch { return send(res, 400, { error: 'Invalid JSON body' }); }
       if (!body.method || !body.endpoint) return send(res, 400, { error: 'method and endpoint are required' });
-      return send(res, 200, { cases: await generate(body, req.headers['x-api-key']) });
+      return send(res, 200, { cases: await cancellable(req, res, () => generate(body, req.headers['x-api-key'])) });
     }
     if (req.url.startsWith('/api/pdf/')) {
       if (req.method === 'GET' && req.url === '/api/pdf/stats') return send(res, 200, rag.stats());
@@ -369,7 +384,7 @@ http.createServer(async (req, res) => {
         let raw = '';
         for await (const chunk of req) { raw += chunk; if (raw.length > 4e6) return send(res, 413, { error: 'Payload too large' }); }
         let body; try { body = JSON.parse(raw); } catch { return send(res, 400, { error: 'Invalid JSON body' }); }
-        return send(res, 200, req.url === '/api/pdf/learn' ? rag.learn(body) : await rag.extract(body, req.headers['x-api-key']));
+        return send(res, 200, req.url === '/api/pdf/learn' ? rag.learn(body) : await cancellable(req, res, () => rag.extract(body, req.headers['x-api-key'])));
       }
     }
     if (req.method === 'POST' && req.url === '/api/fetch-url') {
@@ -386,6 +401,7 @@ http.createServer(async (req, res) => {
     }
     send(res, 405, { error: 'Method not allowed' });
   } catch (e) {
+    if (res.destroyed || res.writableEnded) return;   // the client already left (Stop)
     console.error(e.message);
     send(res, e.status || 500, { error: e.message || 'Server error' });
   }

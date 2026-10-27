@@ -8,7 +8,7 @@ const sleep = ms => new Promise(r=>setTimeout(r,ms));
 // and creeps (max 95%) while waiting on the real API call, then fills to 100% on completion.
 async function runAgent(work){
   STEPS=mode==='ai'?STEPS_AI:STEPS_MANUAL;
-  const a=$('agent'); a.classList.add('show');
+  const a=$('agent'); a.classList.add('show'); $('stopGen').hidden=mode!=='ai'; $('stopGen').disabled=false;
   $('pTitle').textContent=mode==='ai'?(providerLabel()+' is designing your test cases…'):'Generating test cases from rules…';
   $('steps').innerHTML=STEPS.map((s,i)=>`<div class="step" id="s${i}"><span class="dot"></span>${s}</div>`).join('');
   a.scrollIntoView({behavior:'smooth',block:'center'});
@@ -30,18 +30,20 @@ async function runAgent(work){
   }
   if(ai) while(!finished){ target=Math.min(95,Math.max(target,shown)+0.6); await sleep(150); }
   for(let i=0;i<n;i++) if(!$('s'+i).classList.contains('done')){ $('s'+i).classList.add('on'); mark(i); }
-  $('pStep').textContent=error?'Failed':'Done'; target=100;
+  $('pStep').textContent=error?(error.stopped?'Stopped':'Failed'):'Done'; target=100; $('stopGen').hidden=true;
   while(shown<99.5) await sleep(60);
   await sleep(350); clearInterval(tick); a.classList.remove('show');
   if(error) throw error;
   return result;
 }
 
+let genAbort=null;
+$('stopGen').onclick=()=>{ if(genAbort){ $('stopGen').disabled=true; $('pStep').textContent='Stopping…'; genAbort.abort(); } };
 async function callLLM(payload){
   const headers={'Content-Type':'application/json'};
-  let r;
-  try{ r=await fetch('/api/generate',{method:'POST',headers,body:JSON.stringify(payload)}); }
-  catch{ throw new Error('Cannot reach the server. Run "npm start" and open http://localhost:3000.'); }
+  let r; genAbort=new AbortController();
+  try{ r=await fetch('/api/generate',{method:'POST',headers,signal:genAbort.signal,body:JSON.stringify(payload)}); }
+  catch(e){ if(e&&e.name==='AbortError') throw Object.assign(new Error('Stopped'),{stopped:true}); throw new Error('Cannot reach the server. Run "npm start" and open http://localhost:3000.'); }
   const data=await r.json().catch(()=>({}));
   if(!r.ok) throw new Error(data.error||('HTTP '+r.status));
   return data.cases;
@@ -69,7 +71,7 @@ $('gen').onclick=async()=>{
   let ai=[], base=[];
   if(mode==='ai'){
     try{ ai=await runAgent(callLLM({method,endpoint,request:req,response:res,headers:hs.list.map(h=>({name:h.k,value:h.secret?'<redacted>':h.v})),notes:$('notes').value.trim()})); }
-    catch(e){ $('gen').disabled=false; return fail('AI generation failed: '+e.message); }
+    catch(e){ $('gen').disabled=false; return fail(e.stopped?'Stopped — nothing was generated. Press Generate to try again, or switch to Manual.':'AI generation failed: '+e.message); }
   } else {
     await runAgent(Promise.resolve());
     base=generate(method,endpoint,req,res);

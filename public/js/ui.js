@@ -39,7 +39,7 @@ function render(){
     (!q||(x.id+x.title+x.category+x.expected+x.status).toLowerCase().includes(q)));
   $('tbody').innerHTML=rows.length?rows.map((x,i)=>{
     const open=openIds.has(x.id), r=results[x.id]||'';
-    const steps=[`Send <b>${x.method}</b> request to <code>${esc(x.endpoint)}</code>`,'Apply the request / input shown on the left',`Assert status is <b>${esc(x.status)}</b>`,`Assert: ${esc(x.expected)}`];
+    const steps=standardSteps(x).map(esc);
     return `<tr class="tc ${open?'open':''} ${r}" data-id="${x.id}" style="animation-delay:${Math.min(i,25)*25}ms">
       <td class="selcol"><input type="checkbox" class="sel" data-id="${x.id}" ${selectedIds.has(x.id)?'checked':''}></td>
       <td><span class="caret">▶</span></td><td>${x.id}</td><td>${esc(x.category)}</td><td>${esc(x.title)}</td>
@@ -49,7 +49,7 @@ function render(){
       <td>${r?({pass:'✅ Pass',fail:'❌ Fail',blocked:'⏸ Blocked'})[r]:'<span style="color:var(--mute)">—</span>'}</td></tr>
       <tr class="detail ${open?'open':''}" data-for="${x.id}"><td colspan="11"><div class="dwrap"><div class="dinner"><div class="dgrid">
         <div><h4>Request / Input</h4><pre>${esc(pretty(x.request))}</pre></div>
-        <div><h4>Test steps</h4><ol>${steps.map(z=>`<li>${z}</li>`).join('')}</ol></div>
+        <div><h4>Test steps · ${stepFmt==='gherkin'?'Gherkin':'Standard'}</h4>${stepFmt==='gherkin'?`<pre class="gherkin">${gherkinHtml(x)}</pre>`:`<ol>${steps.map(z=>`<li>${z}</li>`).join('')}</ol>`}</div>
         <div><h4>Expected result</h4><p style="margin:0"><b>${esc(x.status)}</b><br>${esc(x.expected)}</p>
           <div class="seg" data-id="${x.id}">
             <button class="pass ${r==='pass'?'on':''}" data-r="pass">✓ Pass</button>
@@ -85,5 +85,7 @@ $('tbody').onclick=e=>{
   const id=tr.dataset.id, d=document.querySelector(`tr.detail[data-for="${id}"]`), o=!tr.classList.contains('open');
   tr.classList.toggle('open',o); d.classList.toggle('open',o); o?openIds.add(id):openIds.delete(id);
 };
+$('stepFmt').value=stepFmt;
+$('stepFmt').onchange=()=>{ stepFmt=$('stepFmt').value; try{ localStorage.setItem('stepFmt',stepFmt); }catch{} render(); };
 ['q','fType','fPri','fSrc'].forEach(id=>$(id).addEventListener('input',render));
 $('toggleAll').onclick=()=>{ allOpen=!allOpen; openIds=new Set(allOpen?cases.map(x=>x.id):[]); $('toggleAll').textContent=allOpen?'Collapse all':'Expand all'; render(); };

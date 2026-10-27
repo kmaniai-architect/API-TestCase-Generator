@@ -2,6 +2,16 @@
    The built-in readers run first. When something important is missing — or nothing is found — the document text is cut into passages,
    the server picks the passages that describe APIs, adds the most similar EARLIER examples (PDFs read cleanly before, endpoints the user
    confirmed) as few-shot guidance, and asks the configured LLM to extract the APIs. Results are merged with what the readers found. */
+/* AI-assisted reading is OFF by default: it sends the document text to the LLM and can take a while, so it only runs when switched on
+   (or for one PDF at a time via the "Use AI for this PDF" button). The choice is remembered. */
+const ragOn=()=>$('ragOn').checked;
+try{ $('ragOn').checked=localStorage.getItem('ragOn')==='1'; }catch{}
+function ragNote(){
+  const ready=typeof llmReady==='function'&&llmReady();
+  $('ragNote').textContent=ragOn()?(ready?'On — messy or incomplete PDFs are sent to the AI automatically (slower, uses your LLM).':'On, but no LLM is configured in .env — it will have no effect.'):'Off — only the built-in readers run (fast). Switch on to let the AI read messy PDFs.';
+}
+$('ragOn').addEventListener('change',()=>{ try{ localStorage.setItem('ragOn',ragOn()?'1':'0'); }catch{} ragNote(); });
+setTimeout(ragNote,600); setTimeout(ragNote,2500);   // the LLM status arrives a moment after load
 let impCtx=null;   // the PDF currently shown: {rows,chunks,ops,layout,note,base,aiDone,aiNote,doc}
 
 /* passages: one per API section when the headings are recognisable, otherwise page by page; long ones are split (tables flattened to "a | b | c") */
@@ -56,9 +66,10 @@ function impPresent(c){
   const hard=ops.filter(o=>o.gaps.some(g=>g!=='headers')).length, canAi=typeof llmReady==='function'&&llmReady();
   if(c.aiDone) impStep(4,'ok',c.aiNote);
   else if(!hard) impStep(4,'ok','Not needed — nothing important is missing');
+  else if(canAi&&!ragOn()) impStep(4,'pend',`AI-assisted reading is off — details are missing for ${hard} endpoint${hard>1?'s':''}; switch it on or use the button below`);
   else if(canAi) impStep(4,'warn',`Details are missing for ${hard} endpoint${hard>1?'s':''} — the AI can read the PDF text (relevant passages + earlier examples) to fill them`);
   else impStep(4,'pend','Details are missing — configure an LLM in .env to let the AI fill them');
-  const btn=hard&&canAi&&!c.aiDone?' <button id="impAiBtn" class="btn ghost" type="button" style="padding:4px 12px">✨ Fill the gaps with AI</button>':'';
+  const btn=(hard||c.q&&c.q.messy)&&canAi&&!c.aiDone?` <button id="impAiBtn" class="btn ghost" type="button" style="padding:4px 12px">${ragOn()?'✨ Fill the gaps with AI':'✨ Use AI for this PDF'}</button>`:'';
   impMsg((v.level==='ok'?`✓ Verified — ${ops.length} endpoint${ops.length>1?'s':''}. Click <b>Use</b> on one to fill the form.`:`⚠ Read with warnings — see the checklist above, then click <b>Use</b> on an endpoint.`)+btn,v.level==='ok'?'ok':'');
   impShow(ops,c.base);
   if(!hard&&!c.aiDone&&ops.length) impLearn(ops.slice(0,12).filter(o=>o.src).map(o=>({chunk:o.src,op:impOpForLearning(o)})),'auto',c.doc);   // weak supervision: a clean read teaches the layout
@@ -67,10 +78,11 @@ function impPresent(c){
 async function impRunAi(){
   const c=impCtx; if(!c) return;
   impStep(4,'run',`Selecting the relevant passages and asking ${esc(typeof llmName==='function'?llmName():'the AI')}…`);
-  impMsg('⏳ AI is reading the document…'); const b=$('impAiBtn'); if(b) b.disabled=true;
+  impMsg('⏳ AI is reading the document… <button id="impStopBtn" class="btn ghost" type="button" style="padding:4px 12px">⏹ Stop</button> <span class="hint" style="display:inline">slow? stop it — the built-in result stays</span>');
+  impAbort=new AbortController();
   try{
     const headers={'Content-Type':'application/json'};
-    const r=await fetch('/api/pdf/extract',{method:'POST',headers,body:JSON.stringify({chunks:c.chunks.map(t=>({text:t})),known:c.ops.map(o=>({method:o.method,url:o.url}))})});
+    const r=await fetch('/api/pdf/extract',{method:'POST',headers,signal:impAbort.signal,body:JSON.stringify({chunks:c.chunks.map(t=>({text:t})),known:c.ops.map(o=>({method:o.method,url:o.url}))})});
     const d=await r.json().catch(()=>({})); if(!r.ok) throw new Error(d.error||'HTTP '+r.status);
     // the AI result is the primary one (it formatted and scrutinised the document); the built-in readers only fill what it left out
     const merged=impMergeOps([{ops:d.ops},{ops:c.ops}],[]), added=merged.filter(m=>!c.ops.some(o=>impSameApi(o,m))).length;
@@ -83,12 +95,19 @@ async function impRunAi(){
     if(!c.ops.length){ impStep(4,'fail','The AI found no API operations in this document.'); impNoOps(c.rows); return; }
     impPresent(c);
   }catch(e){
+    if(e&&e.name==='AbortError'){   // the user pressed Stop: the server cancels the LLM call too
+      impStep(4,'warn','Stopped — the AI was not used');
+      if(c.ops.length) impShow(c.ops,c.base);
+      impMsg('⏹ Stopped. '+(c.ops.length?'The built-in result is shown. ':'')+'<button id="impAiBtn" class="btn ghost" type="button" style="padding:4px 12px">↻ Try the AI again</button>','');
+      return;
+    }
     impStep(4,'fail',esc(e.message));
     // keep what the built-in readers found, and let the user retry (provider overloads are usually temporary)
     if(c.ops.length){ impShow(c.ops,c.base); impMsg('⚠ The AI step failed (see the checklist) — the built-in result is shown. <button id="impAiBtn" class="btn ghost" type="button" style="padding:4px 12px">↻ Try the AI again</button>','err'); }
     else impMsg('✗ '+esc(e.message)+' <button id="impAiBtn" class="btn ghost" type="button" style="padding:4px 12px">↻ Try again</button>','err');
   }
 }
-$('impMsg').addEventListener('click',e=>{ if(e.target.id==='impAiBtn') impRunAi(); });
+let impAbort=null;
+$('impMsg').addEventListener('click',e=>{ if(e.target.id==='impAiBtn') impRunAi(); if(e.target.id==='impStopBtn'&&impAbort) impAbort.abort(); });
 $('impLearned').addEventListener('click',async e=>{ if(e.target.id==='impForget'&&confirm('Forget everything learned from earlier PDFs?')){ try{ refreshLearned(await (await fetch('/api/pdf/learned',{method:'DELETE'})).json()); }catch{} } });
 refreshLearned();

@@ -29,7 +29,7 @@
 </header>
 <main>
   <section class="card">
-    <div class="modebar">
+    <div class="modebar" data-m="manual">
       <div class="modeseg" id="modeSeg">
         <button data-mode="manual" class="on">⚙ Manual <small>offline rules</small></button>
         <button data-mode="ai">🤖 AI <small>LLM</small></button>
@@ -37,7 +37,7 @@
       </div>
       <span class="hint" id="modeNote"></span>
     </div>
-    <div class="inmode">
+    <div class="inmode" id="inmodeBox" data-k="manual">
       <div class="inmode-h"><b>Input Mode</b><span class="hint" style="margin:0" id="inNote">Type the endpoint and bodies below.</span></div>
       <div class="tabs" id="inTabs" role="tablist">
         <button type="button" role="tab" class="tab on" data-imp="manual">✍ Manually</button>
@@ -48,7 +48,9 @@
       <div data-imp-pane="url" hidden>
         <div class="row" style="flex-wrap:nowrap"><input id="impUrl" placeholder="OpenAPI / Swagger JSON URL, or an endpoint that returns JSON" autocomplete="off"><button class="btn primary" id="impFetch" type="button">Fetch</button></div>
       </div>
-      <div data-imp-pane="pdf" hidden><input type="file" id="impFile" accept="application/pdf,.pdf"><ol id="impSteps" class="vsteps" hidden></ol><div class="hint" id="impLearned"></div><div class="hint">API documentation: <b>tables</b> (Endpoint · Method · Header · Source · Destination · Operation, plus request-parameter and response tables with sample data) or plain lines like <code>POST /v1/users</code> with JSON examples. The file is loaded and checked in your browser — it is not sent to any server.</div></div>
+      <div data-imp-pane="pdf" hidden><div class="ragsw"><label class="sw"><input type="checkbox" id="ragOn"><i></i><b>AI-assisted reading (RAG)</b></label>
+          <span class="hint" id="ragNote"></span></div>
+        <input type="file" id="impFile" accept="application/pdf,.pdf"><div class="filechip" id="impChip" hidden></div><ol id="impSteps" class="vsteps" hidden></ol><div class="hint" id="impLearned"></div><div class="hint">API documentation: <b>tables</b> (Endpoint · Method · Header · Source · Destination · Operation, plus request-parameter and response tables with sample data) or plain lines like <code>POST /v1/users</code> with JSON examples. The file is loaded and checked in your browser — it is not sent to any server.</div></div>
       <div class="hint" id="impMsg"></div>
       <div id="impBaseRow" hidden><label for="impBase"><span>Base URL <small style="font-weight:400;color:var(--mute)">(prepended to relative paths)</small></span></label><input id="impBase" placeholder="https://api.example.com" autocomplete="off"></div>
       <input id="impFilter" placeholder="🔍 Filter operations…" hidden autocomplete="off">
@@ -129,6 +131,7 @@
     <div class="phead">
       <div><b id="pTitle">Generating test cases…</b><div class="hint" id="pStep"></div></div>
       <div class="pstat"><span id="pPct">0%</span><small id="pTime">0.0s</small></div>
+      <button class="btn ghost" id="stopGen" type="button" hidden title="Cancel the LLM request">⏹ Stop</button>
     </div>
     <div class="track"><i id="prog"></i></div>
     <div id="steps"></div>
@@ -145,9 +148,11 @@
         <select id="fSrc"><option value="">All sources</option><option value="AI">AI generated</option><option value="Request">Request based</option><option value="Response">Response based</option><option value="General">General</option></select>
         <button class="btn primary" id="saveBtn" title="Save this suite to the history">💾 Save</button>
         <button class="btn ghost" id="selShown" title="Tick every test case that is currently shown (after filtering by category, type, priority …)">☑ Select shown</button>
+        <select id="stepFmt" title="Format of the test steps (details view and exports)"><option value="standard">Steps: Standard</option><option value="gherkin">Steps: Gherkin (Given / When / Then)</option></select>
         <button class="btn ghost" id="toggleAll">Expand all</button>
         <button class="btn ghost" id="csv" title="Export the checked test cases as CSV">⬇ CSV (0 selected)</button>
         <button class="btn ghost" id="postman" title="Export the checked test cases as a Postman collection">⬇ Postman (0 selected)</button>
+        <button class="btn ghost" id="feature" title="Download the checked test cases as a Gherkin .feature file">⬇ Gherkin</button>
         <button class="btn ghost" id="json">⬇ JSON</button>
       </div>
       <div class="tablewrap">
@@ -204,6 +209,7 @@
 <script src="js/theme.js"></script>
 <script src="js/config.js"></script>
 <script src="js/utils.js"></script>
+<script src="js/steps.js"></script>
 <script src="js/generator.js"></script>
 <script src="js/input.js"></script>
 <script src="js/import.js"></script>

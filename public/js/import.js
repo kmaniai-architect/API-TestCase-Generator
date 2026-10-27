@@ -205,13 +205,13 @@ function tabSnapshot(){
   return {
     form:{method,endpoint:$('endpoint').value,req:$('reqBody').value,res:$('resBody').value},
     imp:{ops:impOps,src:impSrc,file:impFileName,isSpec:impIsSpec,msgHtml:$('impMsg').innerHTML,msgClass:$('impMsg').className,steps:$('impSteps').innerHTML,stepsHidden:$('impSteps').hidden,
-         count:$('impCount').textContent,base:$('impBase').value,baseHidden:$('impBaseRow').hidden,filter:$('impFilter').value,filterHidden:$('impFilter').hidden,url:$('impUrl').value,ctx:impCtx},
+         chip:$('impChip').innerHTML,chipHidden:$('impChip').hidden,count:$('impCount').textContent,base:$('impBase').value,baseHidden:$('impBaseRow').hidden,filter:$('impFilter').value,filterHidden:$('impFilter').hidden,url:$('impUrl').value,ctx:impCtx},
     suite:{cases,results,open:[...openIds],selected:[...selectedIds],allOpen,hid:currentHistoryId,pending:pendingSuite}
   };
 }
 const tabBlank=()=>({
   form:{method:'POST',endpoint:'',req:'',res:''},
-  imp:{ops:[],src:null,file:'',isSpec:false,msgHtml:'',msgClass:'hint',steps:'',stepsHidden:true,count:'',base:'',baseHidden:true,filter:'',filterHidden:true,url:'',ctx:null},
+  imp:{ops:[],src:null,file:'',isSpec:false,msgHtml:'',msgClass:'hint',steps:'',stepsHidden:true,chip:'',chipHidden:true,count:'',base:'',baseHidden:true,filter:'',filterHidden:true,url:'',ctx:null},
   suite:{cases:[],results:{},open:[],selected:[],allOpen:false,hid:null,pending:null}
 });
 function tabRestore(st){
@@ -223,7 +223,7 @@ function tabRestore(st){
   $('impBase').value=i.base; $('impBaseRow').hidden=i.baseHidden; $('impFilter').value=i.filter; $('impFilter').hidden=i.filterHidden; $('impUrl').value=i.url;
   if(impOps.length) impList(); else { $('impList').innerHTML=''; $('impCount').textContent=''; }
   if(impOps.length) $('impCount').textContent=i.count;
-  $('impFile').value='';
+  $('impFile').value=''; $('impChip').innerHTML=i.chip||''; $('impChip').hidden=i.chipHidden!==false;
   cases=s.cases; results=s.results; openIds=new Set(s.open); selectedIds=new Set(s.selected); allOpen=s.allOpen; catFilter=new Set(); currentHistoryId=s.hid; pendingSuite=s.pending;
   if(cases.length){ buildDash(); buildCats(); $('toggleAll').textContent=allOpen?'Collapse all':'Expand all'; render(); $('results').hidden=false; }
   else $('results').hidden=true;
@@ -234,7 +234,7 @@ let tabsReady=false;
 function setInputMode(k){
   if(tabsReady&&k!==inMode){ tabState[inMode]=tabSnapshot(); tabRestore(tabState[k]||tabBlank()); }
   tabsReady=true;
-  inMode=k;
+  inMode=k; $('inmodeBox').dataset.k=k;
   document.querySelectorAll('#inTabs .tab').forEach(t=>{ const on=t.dataset.imp===k; t.classList.toggle('on',on); t.setAttribute('aria-selected',on); });
   $('impPanel').hidden=k==='manual';
   document.querySelectorAll('[data-imp-pane]').forEach(p=>p.hidden=p.dataset.impPane!==k);
@@ -290,6 +290,12 @@ function impStep(i,state,text){   // state: run | ok | warn | fail
   if(!el.children.length) el.innerHTML=IMP_STEPS.map((n,k)=>`<li data-s="${k}" class="pend"><i></i><div><b>${n}</b><small></small></div></li>`).join('');
   const li=el.children[i]; li.className=state; li.querySelector('small').innerHTML=text||'';
 }
+/* the chosen file stays visible: name + size, with a remove link */
+function impChipShow(name,size){ const c=$('impChip'); c.hidden=false; c.innerHTML=`📄 <b>${esc(name)}</b> · ${impFmtSize(size)} <button class="link" id="impChipX" type="button">✕ remove</button>`; }
+$('impChip').addEventListener('click',e=>{ if(e.target.id!=='impChipX') return;
+  $('impFile').value=''; $('impChip').hidden=true; $('impChip').innerHTML=''; impFileName=''; impStepsReset(); impCtx=null; impOps=[]; impSrc=null;
+  $('impList').innerHTML=''; $('impCount').textContent=''; impMsg(''); $('impBaseRow').hidden=true; $('impFilter').hidden=true; });
+$('impFile').addEventListener('click',function(){ this.value=''; });   // choosing the same file again must still count as a change
 const impStepsReset=()=>{ $('impSteps').innerHTML=''; $('impSteps').hidden=true; };
 const impFmtSize=n=>n<1024?n+' B':n<1048576?(n/1024).toFixed(1)+' KB':(n/1048576).toFixed(1)+' MB';
 
@@ -321,8 +327,8 @@ function impVerify(ops,layout,note){
 
 $('impFile').onchange=async e=>{
   const f=e.target.files[0]; if(!f) return;
-  impFileName=f.name; impStepsReset(); $('impList').innerHTML=''; $('impCount').textContent=''; impMsg('');
-  const stop=(i,msg)=>{ impStep(i,'fail',msg); impMsg('✗ '+msg,'err'); e.target.value=''; };
+  impFileName=f.name; impChipShow(f.name,f.size); impStepsReset(); $('impList').innerHTML=''; $('impCount').textContent=''; impMsg('');
+  const stop=(i,msg)=>{ impStep(i,'fail',msg); impMsg('✗ '+msg,'err'); };
   try{
     // 1) upload (into the browser — the file is never sent to a server)
     impStep(0,'run',`${esc(f.name)} — 0%`);
@@ -362,14 +368,15 @@ $('impFile').onchange=async e=>{
     impValidateOps(ops); impAddGaps(ops);                                   // discard unreadable data, normalise URLs, list what is missing
     const q=impQuality(ops,text), ctx={rows,chunks,ops,layout,note,base:tx.base||'',doc:f.name,aiDone:false,q};
     const canAi=typeof llmReady==='function'&&llmReady();
-    if(q.messy&&canAi){                                                      // messy / incomplete: the AI reads, formats and scrutinises it right away
+    if(q.messy&&canAi&&ragOn()){                                                      // messy / incomplete: the AI reads, formats and scrutinises it right away
       impStep(3,'warn',!ops.length?'The built-in readers found no endpoints':`The built-in readers are not confident (${[q.junk&&`${q.junk} unreadable block${q.junk>1?'s':''} discarded`,q.missing.length&&`${q.missing.length} mentioned endpoint${q.missing.length>1?'s':''} not captured`,q.hard&&`${q.hard} endpoint${q.hard>1?'s':''} incomplete`].filter(Boolean).join(', ')})`);
-      impCtx=ctx; await impRunAi(); e.target.value=''; return;
+      impCtx=ctx; await impRunAi(); return;
     }
-    if(!ops.length){ impStep(3,'fail','The built-in readers found no endpoints'); impStep(4,'pend','Configure an LLM in .env to let the AI read PDFs the built-in readers cannot'); impNoOps(rows); e.target.value=''; return; }
+    if(!ops.length){ impStep(3,'fail','The built-in readers found no endpoints'); impStep(4,'pend',canAi?'AI-assisted reading is off — use the button below to let the AI read this PDF':'Configure an LLM in .env to let the AI read PDFs the built-in readers cannot'); impCtx=ctx; impNoOps(rows);
+      if(canAi) $('impMsg').insertAdjacentHTML('beforeend','<div style="margin-top:8px"><button id="impAiBtn" class="btn ghost" type="button" style="padding:4px 12px">✨ Use AI for this PDF</button></div>');
+      return; }
     if(q.messy) ctx.note+=` This document looks messy${q.junk?` (${q.junk} unreadable block${q.junk>1?'s':''} discarded)`:''}${q.missing.length?` (${q.missing.length} mentioned endpoint${q.missing.length>1?'s':''} not captured: ${q.missing.slice(0,3).map(m=>m.method+' '+m.url).join(', ')})`:''} — configure an LLM in .env so the AI can read and format it.`;
     impPresent(ctx);
   }catch(err){ stop(3,esc(err.message)); }
-  e.target.value='';
 };
 setInputMode('manual');
